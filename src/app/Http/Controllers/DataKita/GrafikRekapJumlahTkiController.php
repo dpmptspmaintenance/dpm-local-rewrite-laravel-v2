@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\DB;
 class GrafikRekapJumlahTkiController extends Controller
 {
     private const FILTER_MAP = [
-        'tahun' => 'tahun_pengambilan_data',
         'uraian_skala_usaha' => 'uraian_skala_usaha',
         'uraian_risiko_proyek' => 'uraian_risiko_proyek',
         'uraian_jenis_proyek' => 'uraian_jenis_proyek',
@@ -23,7 +22,7 @@ class GrafikRekapJumlahTkiController extends Controller
         'uraian_status_penanaman_modal' => 'uraian_status_penanaman_modal',
         'kelurahan_usaha' => 'kelurahan_usaha',
         'kecamatan_usaha' => 'kecamatan_usaha',
-        'bulan_pengambilan_data' => 'raw:CAST(bulan_pengambilan_data AS UNSIGNED)',
+        'bulan_pengambilan_data' => 'raw:MONTH(tanggal_terbit_oss)',
         'kbli' => 'kbli',
         'jml_tki' => 'tki',
     ];
@@ -31,18 +30,18 @@ class GrafikRekapJumlahTkiController extends Controller
     private const SELECT_COLUMNS = [
         'uraian_skala_usaha', 'uraian_risiko_proyek', 'uraian_jenis_proyek',
         'uraian_status_penanaman_modal', 'kelurahan_usaha', 'kecamatan_usaha',
-        'tahun_pengambilan_data', 'kbli',
+        'kbli',
     ];
 
     public function index()
     {
         $rows = DB::table('2023_dp_proyek')
-            ->select('tahun_pengambilan_data')
+            ->selectRaw('YEAR(tanggal_terbit_oss) as tahun_pengambilan_data')
             ->selectRaw('COALESCE(SUM(tki), 0) as total')
             ->whereNotNull('tki')
-            ->whereNotNull('tahun_pengambilan_data')
-            ->groupBy('tahun_pengambilan_data')
-            ->orderBy('tahun_pengambilan_data')
+            ->whereNotNull('tanggal_terbit_oss')
+            ->groupBy(DB::raw('YEAR(tanggal_terbit_oss)'))
+            ->orderBy(DB::raw('YEAR(tanggal_terbit_oss)'))
             ->get();
 
         return view('datakita.grafik-rekap-jumlah-tki.index', [
@@ -56,11 +55,11 @@ class GrafikRekapJumlahTkiController extends Controller
         $tahun = $request->query('tahun');
 
         $rows = DB::table('2023_dp_proyek')
-            ->selectRaw('CAST(bulan_pengambilan_data AS UNSIGNED) as bln')
+            ->selectRaw('MONTH(tanggal_terbit_oss) as bln')
             ->selectRaw('COALESCE(SUM(tki), 0) as total')
-            ->where('tahun_pengambilan_data', $tahun)
+            ->whereRaw('YEAR(tanggal_terbit_oss) = ?', [$tahun])
             ->whereNotNull('tki')
-            ->whereNotNull('bulan_pengambilan_data')
+            ->whereNotNull('tanggal_terbit_oss')
             ->groupBy('bln')
             ->orderBy('bln')
             ->get();
@@ -82,7 +81,7 @@ class GrafikRekapJumlahTkiController extends Controller
 
         $options = function (string $column) use ($tahun) {
             return DB::table('2023_dp_proyek')
-                ->where('tahun_pengambilan_data', $tahun)
+                ->whereRaw('YEAR(tanggal_terbit_oss) = ?', [$tahun])
                 ->select($column)
                 ->distinct()
                 ->whereNotNull($column)
@@ -103,6 +102,11 @@ class GrafikRekapJumlahTkiController extends Controller
     private function baseQuery(Request $request)
     {
         $query = DB::table('2023_dp_proyek');
+
+        $tahun = $request->input('tahun');
+        if ($tahun !== null && $tahun !== '') {
+            $query->whereRaw('YEAR(tanggal_terbit_oss) = ?', [$tahun]);
+        }
 
         foreach (self::FILTER_MAP as $param => $column) {
             $value = $request->input($param);
@@ -128,16 +132,17 @@ class GrafikRekapJumlahTkiController extends Controller
 
         $orderName = $request->input('order.0.name', '');
         $orderDir = strtolower($request->input('order.0.dir', 'asc')) === 'desc' ? 'desc' : 'asc';
-        $orderColumn = self::SORTABLE[$orderName] ?? 'raw:CAST(bulan_pengambilan_data AS UNSIGNED)';
+        $orderColumn = self::SORTABLE[$orderName] ?? 'raw:MONTH(tanggal_terbit_oss)';
 
         $recordsTotal = DB::table('2023_dp_proyek')
-            ->whereNotNull('tahun_pengambilan_data')
+            ->whereNotNull('tanggal_terbit_oss')
             ->count();
         $recordsFiltered = $this->baseQuery($request)->count();
 
         $rows = $this->baseQuery($request)
             ->select(self::SELECT_COLUMNS)
-            ->selectRaw('CAST(bulan_pengambilan_data AS UNSIGNED) as bulan_pengambilan_data')
+            ->selectRaw('YEAR(tanggal_terbit_oss) as tahun_pengambilan_data')
+            ->selectRaw('MONTH(tanggal_terbit_oss) as bulan_pengambilan_data')
             ->selectRaw('tki as jml_tki')
             ->orderByRaw(preg_replace('/^raw:/', '', $orderColumn).' '.$orderDir)
             ->skip($start)
@@ -156,11 +161,12 @@ class GrafikRekapJumlahTkiController extends Controller
     {
         $orderName = $request->input('columnName', '');
         $orderDir = strtolower($request->input('columnSortOrder', 'asc')) === 'desc' ? 'desc' : 'asc';
-        $orderColumn = self::SORTABLE[$orderName] ?? 'raw:CAST(bulan_pengambilan_data AS UNSIGNED)';
+        $orderColumn = self::SORTABLE[$orderName] ?? 'raw:MONTH(tanggal_terbit_oss)';
 
         $rows = $this->baseQuery($request)
             ->select(self::SELECT_COLUMNS)
-            ->selectRaw('CAST(bulan_pengambilan_data AS UNSIGNED) as bulan_pengambilan_data')
+            ->selectRaw('YEAR(tanggal_terbit_oss) as tahun_pengambilan_data')
+            ->selectRaw('MONTH(tanggal_terbit_oss) as bulan_pengambilan_data')
             ->selectRaw('tki as jml_tki')
             ->orderByRaw(preg_replace('/^raw:/', '', $orderColumn).' '.$orderDir)
             ->get();

@@ -27,9 +27,23 @@ use App\Http\Controllers\DataKita\RekapNibController;
 use App\Http\Controllers\DataKita\RekapSektorController;
 use App\Http\Controllers\DataKita\SimbgController;
 use App\Http\Controllers\DataKita\StatistikController;
+use App\Http\Controllers\Persediaan\CetakController;
+use App\Http\Controllers\Persediaan\LaporanController;
+use App\Http\Controllers\Persediaan\LaporanPemakaianController;
+use App\Http\Controllers\Persediaan\ManajemenKunciController;
+use App\Http\Controllers\Persediaan\MasterBarangController;
+use App\Http\Controllers\Persediaan\MasterRekeningController;
+use App\Http\Controllers\Persediaan\MasterSatuanController;
+use App\Http\Controllers\Persediaan\PersediaanController;
+use App\Http\Controllers\Persediaan\RiwayatDokumenController;
+use App\Http\Controllers\Persediaan\RiwayatOpnameController;
+use App\Http\Controllers\Persediaan\StokOpnameController;
+use App\Http\Controllers\Persediaan\TransaksiBastController;
+use App\Http\Controllers\Persediaan\TransaksiBonController;
 use App\Http\Controllers\RapatKita\JadwalController;
 use App\Http\Controllers\RapatKita\NotulenController;
 use App\Http\Controllers\SikenutController;
+use App\Http\Controllers\SiperdafitController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -82,6 +96,68 @@ Route::middleware('auth')->group(function () {
         Route::post('/update-multi', [SikenutController::class, 'updateMulti'])->name('update-multi');
         Route::post('/destroy', [SikenutController::class, 'destroy'])->name('destroy');
         Route::post('/import', [SikenutController::class, 'import'])->name('import');
+    });
+
+    Route::prefix('siperdafit')->name('siperdafit.')->group(function () {
+        Route::get('/', [SiperdafitController::class, 'index'])->name('index');
+        Route::get('/list', [SiperdafitController::class, 'list'])->name('list');
+        Route::post('/store', [SiperdafitController::class, 'store'])->name('store');
+        Route::get('/{itRequest}/detail', [SiperdafitController::class, 'detail'])->name('detail');
+        Route::post('/{itRequest}/update', [SiperdafitController::class, 'update'])->name('update');
+        Route::post('/{itRequest}/delete', [SiperdafitController::class, 'destroy'])->name('delete');
+        Route::post('/update-status', [SiperdafitController::class, 'updateStatus'])->name('update-status');
+        Route::post('/update-priority', [SiperdafitController::class, 'updatePriority'])->name('update-priority');
+    });
+
+    Route::prefix('persediaan')->name('persediaan.')->group(function () {
+        Route::get('/', [PersediaanController::class, 'index'])->name('index');
+
+        Route::get('/master-rekening', [MasterRekeningController::class, 'index'])->name('master-rekening.index');
+        Route::post('/master-rekening', [MasterRekeningController::class, 'store'])->name('master-rekening.store');
+        Route::put('/master-rekening/{kode}', [MasterRekeningController::class, 'update'])->name('master-rekening.update');
+        Route::post('/master-rekening/{kode}/toggle-status', [MasterRekeningController::class, 'toggleStatus'])->name('master-rekening.toggle-status');
+
+        Route::get('/master-satuan', [MasterSatuanController::class, 'index'])->name('master-satuan.index');
+        Route::post('/master-satuan', [MasterSatuanController::class, 'store'])->name('master-satuan.store');
+        Route::put('/master-satuan/{id}', [MasterSatuanController::class, 'update'])->name('master-satuan.update');
+        Route::post('/master-satuan/{id}/toggle-status', [MasterSatuanController::class, 'toggleStatus'])->name('master-satuan.toggle-status');
+
+        Route::get('/master-barang', [MasterBarangController::class, 'index'])->name('master-barang.index');
+        Route::post('/master-barang', [MasterBarangController::class, 'store'])->name('master-barang.store');
+        Route::put('/master-barang/{id}', [MasterBarangController::class, 'update'])->name('master-barang.update');
+
+        Route::get('/manajemen-kunci', [ManajemenKunciController::class, 'index'])->name('manajemen-kunci.index');
+        Route::post('/manajemen-kunci/toggle', [ManajemenKunciController::class, 'toggle'])->name('manajemen-kunci.toggle');
+
+        Route::get('/transaksi-bast', [TransaksiBastController::class, 'index'])->name('transaksi-bast.index');
+        Route::post('/transaksi-bast', [TransaksiBastController::class, 'store'])->name('transaksi-bast.store');
+
+        Route::get('/transaksi-bon', [TransaksiBonController::class, 'index'])->name('transaksi-bon.index');
+        Route::post('/transaksi-bon', [TransaksiBonController::class, 'store'])->name('transaksi-bon.store');
+
+        Route::get('/riwayat-dokumen', [RiwayatDokumenController::class, 'index'])->name('riwayat-dokumen.index');
+        Route::post('/riwayat-dokumen/ajukan', [RiwayatDokumenController::class, 'ajukanKeAdmin'])->name('riwayat-dokumen.ajukan');
+        Route::post('/riwayat-dokumen/hapus', [RiwayatDokumenController::class, 'hapusDokumen'])->name('riwayat-dokumen.hapus');
+        Route::post('/riwayat-dokumen/approve', [RiwayatDokumenController::class, 'prosesApproval'])->name('riwayat-dokumen.approve');
+        Route::post('/riwayat-dokumen/edit', [RiwayatDokumenController::class, 'editDokumen'])->name('riwayat-dokumen.edit');
+
+        Route::get('/stok-opname', [StokOpnameController::class, 'index'])->name('stok-opname.index');
+        Route::post('/stok-opname', [StokOpnameController::class, 'store'])->name('stok-opname.store');
+
+        Route::get('/riwayat-opname', [RiwayatOpnameController::class, 'index'])->name('riwayat-opname.index');
+        Route::post('/riwayat-opname/hapus', [RiwayatOpnameController::class, 'hapusOpname'])->name('riwayat-opname.hapus');
+        Route::post('/riwayat-opname/finalkan', [RiwayatOpnameController::class, 'finalkanOpname'])->name('riwayat-opname.finalkan');
+
+        Route::get('/laporan', [LaporanController::class, 'index'])->name('laporan.index');
+        Route::post('/laporan/data', [LaporanController::class, 'data'])->name('laporan.data');
+        Route::get('/laporan/export', [LaporanController::class, 'export'])->name('laporan.export');
+
+        Route::get('/laporan-pemakaian', [LaporanPemakaianController::class, 'index'])->name('laporan-pemakaian.index');
+
+        Route::get('/cetak/bast/{id}', [CetakController::class, 'bast'])->name('cetak.bast');
+        Route::get('/cetak/bon/{id}', [CetakController::class, 'bon'])->name('cetak.bon');
+        Route::get('/cetak/baso/{id}', [CetakController::class, 'baso'])->name('cetak.baso');
+        Route::get('/cetak/laporan', [CetakController::class, 'laporan'])->name('cetak.laporan');
     });
 
     Route::prefix('data-kita')->name('datakita.')->group(function () {

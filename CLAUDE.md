@@ -97,6 +97,13 @@ Legacy `dpmptsp-local/user/` (7 files) converted 1:1: index, get_users (ajax→h
 - `updateAccess`/`batchUpdateAccess` write `shared_pages` (JSON column, cast as `array` on the model) — single-user path uses Eloquent `update()` (cast applies); batch path uses query-builder `update()` per id (cast doesn't apply there, so `json_encode()` called explicitly) — both land the same JSON shape.
 - 7 routes verified via `route:list --path=user`. Controller `php -l` clean, `view:cache` OK.
 
+### Grafik-rekap tahun/bulan field fix (2026-09-08)
+
+User instruction: `GrafikRekapJumlahInvestasiController` + `GrafikRekapJumlahTkiController` gak boleh pakai `tahun_pengambilan_data`/`bulan_pengambilan_data` (varchar) buat filter/group — gunakan a date col di `2023_dp_proyek` via `YEAR(...)`/`MONTH(...)`. Applied to both controllers (index/bulanan/table/baseQuery/ajaxData/export + SORTABLE `bulan_pengambilan_data` raw expr). Output alias names (`tahun_pengambilan_data`, `bulan_pengambilan_data`, `jml_investasi`/`jml_tki`) kept identical — blade views untouched. `FILTER_MAP` no longer carries `tahun` (needs whereRaw, not plain where); handled separately in `baseQuery()`.
+- First pass used `tanggal_proyek` → hit MySQL `only_full_group_by` error on `index()`: table still has a real (unused) column literally named `tahun_pengambilan_data`, so `groupBy('tahun_pengambilan_data')` bound to that real column instead of the `YEAR(...)` select alias, causing a functional-dependency mismatch. Fixed by grouping/ordering on `DB::raw('YEAR(...)')` directly instead of the alias string.
+- Second pass: user changed date source again from `tanggal_proyek` → **`tanggal_terbit_oss`** (also a date col on `2023_dp_proyek`). Applied via global rename across both controller files; all `YEAR(...)`/`MONTH(...)`/`whereNotNull(...)`/`groupBy(DB::raw('YEAR(...)'))` now reference `tanggal_terbit_oss`.
+- Not yet verified with `php -l` (php binary unavailable in this sandbox) — logic reviewed by inspection only.
+
 ### Remaining / notes
 
 1. HTTP smoke-test pages when auto-mode classifier back up. DB `dpmptsp_new` tables empty (no sync yet) — Import Data itself is how real data would land, but not exercised yet.
