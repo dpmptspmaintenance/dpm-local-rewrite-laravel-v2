@@ -1,0 +1,46 @@
+services:
+  app:
+    build:
+      context: ./docker/php
+    container_name: dpmptsp-app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./src:/var/www
+    networks:
+      - dpmptsp
+
+  web:
+    image: nginx:alpine
+    container_name: dpmptsp-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - dpmptsp
+
+  db:
+    image: mysql:8.0
+    container_name: dpmptsp-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dpmptsp_new
+    ports:
+      - "3307:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - dpmptsp
+
+networks:
+  dpmptsp:
+    driver: bridge
+
+volumes:
+  dbdata:

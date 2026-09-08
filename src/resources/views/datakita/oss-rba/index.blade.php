@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Perizinan OSS-RBA — Data Kita</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Moderustic:wght@300..800&display=swap" rel="stylesheet">
+    <style>
+        html, body { font-family: "Moderustic", sans-serif; }
+    </style>
+</head>
+
+<body>
+    @include('datakita.partials.navbar')
+
+    <div class="mx-2 mt-3">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h1 class="card-title">Cari Data Perizinan OSS-RBA</h1>
+            </div>
+            <div class="card-body">
+
+                <div class="row g-3 p-3">
+
+                    <div class="col-3">
+                        <label class="fw-semibold" for="tahun">Pilih Tahun</label>
+                        <select class="form-select" name="tahun" id="tahun">
+                            <option value="">Pilih Semua Tahun</option>
+                            @foreach (range(2020, (int) date('Y')) as $year)
+                                <option value="{{ $year }}">{{ $year }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <label class="fw-semibold" for="bulan">Pilih Bulan</label>
+                        <select class="form-select" name="bulan" id="bulan">
+                            <option value="">Pilih Semua Bulan</option>
+                            @foreach (['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'] as $i => $namaBulan)
+                                <option value="{{ $i + 1 }}">{{ $namaBulan }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <label class="fw-semibold" for="uraian_status_penanaman_modal">Status Penanaman Modal</label>
+                        <select class="form-select" name="uraian_status_penanaman_modal" id="uraian_status_penanaman_modal">
+                            <option value="">Pilih Semua Status Penanaman Modal</option>
+                            @foreach ($statusPenanamanModal as $row)
+                                <option value="{{ $row->kode_sandal }}">{{ $row->nama_sandal }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <label class="fw-semibold" for="resiko_proyek">Resiko Proyek</label>
+                        <select class="form-select" name="resiko_proyek" id="resiko_proyek">
+                            <option value="">Pilih Semua Resiko Proyek</option>
+                            @foreach ($resiko as $row)
+                                <option value="{{ $row->Resiko }}">{{ $row->Resiko }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="uraian_jenis_perizinan">Jenis Perizinan</label>
+                        <select class="form-select" name="uraian_jenis_perizinan" id="uraian_jenis_perizinan">
+                            <option value="">Pilih Semua Jenis Perizinan</option>
+                            @foreach ($jenisIzin as $row)
+                                <option value="{{ $row->jenis_izin }}">{{ $row->jenis_izin }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="nama_dokumen">Nama Dokumen</label>
+                        <select class="form-select" name="nama_dokumen" id="nama_dokumen">
+                            <option value="">Pilih Semua Nama Dokumen</option>
+                            @foreach ($dokumenIzin as $row)
+                                <option value="{{ $row->dok_izin }}">{{ $row->dok_izin }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="kl_sektor">Sektor Pembina</label>
+                        <select class="form-select" name="kl_sektor" id="kl_sektor">
+                            <option value="">Pilih Sektor Pembina</option>
+                            @foreach ($pembina as $row)
+                                <option value="{{ $row->pembina }}">{{ $row->pembina }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="uraian_status_respon">Status Respon</label>
+                        <select class="form-select" name="uraian_status_respon" id="uraian_status_respon">
+                            <option value="">Pilih Status Respon</option>
+                            @foreach ($statusRespon as $row)
+                                <option value="{{ $row->status_respon }}">{{ $row->status_respon }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-12 mt-4">
+                        <label class="fw-semibold" for="sektor">Sektor</label>
+                        <select class="form-select" name="sektor" id="sektor">
+                            <option value="">Pilih Semua Sektor</option>
+                            @foreach ($sektor as $row)
+                                <option value="{{ $row->Id }}">{{ $row->nama_sektor }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-12 mt-4">
+                        <button id="cari" class="btn btn-primary w-100">Cari</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tmpt_search"></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+    <script>
+        $.ajaxSetup({
+            headers: { 'X-CSRF-TOKEN': @json(csrf_token()) }
+        });
+
+        $("#cari").on("click", function() {
+            $("#tmpt_search").load(@json(route('datakita.ossrba.search')));
+        });
+    </script>
+</body>
+
+</html>
