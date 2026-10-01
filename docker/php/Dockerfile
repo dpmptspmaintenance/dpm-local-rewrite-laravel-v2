@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
-    && docker-php-ext-install pdo_mysql mysqli zip gd mbstring exif pcntl bcmath \
+    libicu-dev \
+    && docker-php-ext-install pdo_mysql mysqli zip gd mbstring exif pcntl bcmath intl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Composer

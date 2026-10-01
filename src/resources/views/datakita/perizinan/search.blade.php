@@ -25,7 +25,9 @@
             "uraian_skala_usaha",
             "kecamatan_usaha",
             "sektor_pembina",
-            "uraian_status_respon"
+            "uraian_status_respon",
+            "nama_dokumen",
+            "alamat_usaha"
         ];
 
         $(fields.map(field => `#${field}`).join(",")).on('change', function(ev) {
@@ -120,14 +122,6 @@
                 { data: 'kbli', name: 'kbli', title: 'KBLI' },
                 { data: 'judul_kbli', name: 'judul_kbli', title: 'Judul KBLI' },
                 { data: 'uraian_skala_usaha', name: 'uraian_skala_usaha', title: 'Skala Usaha' },
-                {
-                    data: null,
-                    title: "Luas Tanah",
-                    orderable: false,
-                    render: function(data, type, row) {
-                        return `${row.luas_tanah || 0} ${row.satuan_tanah || ''}`;
-                    }
-                },
                 { data: 'jumlah_investasi3', name: 'jumlah_investasi3', title: 'Jumlah Investasi' },
                 {
                     data: 'id_permohonan_izin',
@@ -139,6 +133,12 @@
                     data: 'uraian_jenis_perizinan',
                     name: 'uraian_jenis_perizinan',
                     title: 'Jenis Perizinan',
+                    render: function(d) { return d ? d : '-'; }
+                },
+                {
+                    data: 'nama_dokumen',
+                    name: 'nama_dokumen',
+                    title: 'Nama Dokumen',
                     render: function(d) { return d ? d : '-'; }
                 },
                 {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\RapatKita;
 
 use App\Http\Controllers\Controller;
 use App\Models\RapatKitaSchedule;
+use App\Services\RapatKita\SheetsMirror;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -104,6 +105,8 @@ class JadwalController extends Controller
             $message = 'Jadwal ditambahkan.';
         }
 
+        app(SheetsMirror::class)->syncAll();
+
         return redirect()->route('rapatkita.jadwal.index')->with('success', $message);
     }
 
@@ -112,6 +115,8 @@ class JadwalController extends Controller
         $this->authorizeBidang($schedule, Auth::user()->bidang);
 
         $schedule->update(['is_aktif' => 0]);
+
+        app(SheetsMirror::class)->syncAll();
 
         return redirect()->route('rapatkita.jadwal.index')->with('success', 'Kegiatan berhasil dihapus.');
     }

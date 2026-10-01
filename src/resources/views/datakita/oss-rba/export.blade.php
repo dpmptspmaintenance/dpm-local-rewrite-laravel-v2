@@ -7,8 +7,14 @@
         body { font-family: sans-serif; }
         table { margin: 20px auto; border-collapse: collapse; }
         table th, table td { border: 1px solid #3c3c3c; padding: 3px 8px; }
+        th { background-color: #f2f2f2; }
     </style>
 </head>
+
+@php
+    $groupLabels = ['l' => 'Data Perizinan', 'ref' => 'Data Referensi'];
+    $order = ['l', 'ref'];
+@endphp
 
 <body>
     <div class="container mt-4">
@@ -16,37 +22,28 @@
         <table border="1" class="table">
             <thead>
                 <tr>
-                    <th>No</th>
-                    <th>Nama Perusahaan</th>
-                    <th>NIB</th>
-                    <th>Tanggal Terbit OSS</th>
-                    <th>Resiko</th>
-                    <th>KBLI</th>
-                    <th>Judul KBLI</th>
-                    <th>Kelurahan</th>
-                    <th>Kecamatan</th>
-                    <th>Jenis Perizinan</th>
-                    <th>Nama Dokumen</th>
-                    <th>Status Respon</th>
-                    <th>Sektor</th>
+                    <th rowspan="2">No</th>
+                    @foreach ($order as $alias)
+                        <th colspan="{{ count($groups[$alias] ?? []) }}">{{ $groupLabels[$alias] }}</th>
+                    @endforeach
+                </tr>
+                <tr>
+                    @foreach ($order as $alias)
+                        @foreach ($groups[$alias] ?? [] as $column)
+                            <th>{{ ucwords(str_replace('_', ' ', $column)) }}</th>
+                        @endforeach
+                    @endforeach
                 </tr>
             </thead>
             <tbody>
                 @foreach ($rows as $row)
                     <tr>
                         <td>{{ $loop->iteration }}</td>
-                        <td>{{ $row->nama_perusahaan }}</td>
-                        <td>NIB: {{ $row->nib }}</td>
-                        <td>{{ $row->day_of_tanggal_terbit_oss }}</td>
-                        <td>{{ $row->resiko }}</td>
-                        <td>{{ $row->kbli }}</td>
-                        <td>{{ $row->judul_kbli }}</td>
-                        <td>{{ $row->kelurahan }}</td>
-                        <td>{{ $row->kecamatan }}</td>
-                        <td>{{ $row->uraian_jenis_perizinan }}</td>
-                        <td>{{ $row->nama_dokumen }}</td>
-                        <td>{{ $row->uraian_status_respon }}</td>
-                        <td>{{ $row->kl_sektor }}</td>
+                        @foreach ($order as $alias)
+                            @foreach ($groups[$alias] ?? [] as $column)
+                                <td>{{ $row->{"{$alias}__{$column}"} ?? '' }}</td>
+                            @endforeach
+                        @endforeach
                     </tr>
                 @endforeach
             </tbody>

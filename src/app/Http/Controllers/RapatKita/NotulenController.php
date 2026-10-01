@@ -5,6 +5,7 @@ namespace App\Http\Controllers\RapatKita;
 use App\Http\Controllers\Controller;
 use App\Models\RapatKitaNotulen;
 use App\Models\RapatKitaSchedule;
+use App\Services\RapatKita\SheetsMirror;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -39,6 +40,8 @@ class NotulenController extends Controller
             'user_id_pembuat_notulen' => Auth::id(),
         ]);
 
+        app(SheetsMirror::class)->syncAll();
+
         return redirect()->route('rapatkita.jadwal.index')->with('success', 'Notulen ditambahkan.');
     }
 
@@ -59,6 +62,8 @@ class NotulenController extends Controller
         $fotos = $this->uploadFotos($request);
 
         $notulen->update([...$validated, ...$fotos]);
+
+        app(SheetsMirror::class)->syncAll();
 
         return redirect()->route('rapatkita.notulen.index')->with('success', 'Data notulen berhasil diubah!');
     }

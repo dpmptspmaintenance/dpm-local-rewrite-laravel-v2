@@ -5,6 +5,7 @@ namespace App\Http\Controllers\DataKita;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class OssRbaController extends Controller
 {
@@ -107,18 +108,40 @@ class OssRbaController extends Controller
         ]);
     }
 
+    private const EXPORT_REFERENCE = [
+        'r.Resiko' => 'resiko',
+        'f.nama_proyek' => 'judul_kbli',
+        'dp.kelurahan_usaha' => 'kelurahan',
+        'dp.kecamatan_usaha' => 'kecamatan',
+    ];
+
     public function export(Request $request)
     {
         $orderColumn = self::SORTABLE[$request->input('columnName', '')] ?? 'l.tanggal_proyek';
         $orderDir = strtolower($request->input('columnSortOrder', 'desc')) === 'asc' ? 'asc' : 'desc';
 
+        $columns = array_values(array_diff(Schema::getColumnListing('2023_list_izin'), ['id']));
+
+        $selects = [];
+        foreach ($columns as $column) {
+            $selects[] = DB::raw("`l`.`{$column}` as `l__{$column}`");
+        }
+
+        $reference = [];
+        foreach (self::EXPORT_REFERENCE as $expression => $alias) {
+            $selects[] = DB::raw("{$expression} as `ref__{$alias}`");
+            $reference[] = $alias;
+        }
+
         $rows = $this->baseQuery($request)
-            ->select(self::SELECT_COLUMNS)
+            ->select($selects)
             ->orderBy($orderColumn, $orderDir)
             ->get();
 
-        return response()->streamDownload(function () use ($rows) {
-            echo view('datakita.oss-rba.export', ['rows' => $rows])->render();
+        $groups = ['l' => $columns, 'ref' => $reference];
+
+        return response()->streamDownload(function () use ($rows, $groups) {
+            echo view('datakita.oss-rba.export', ['rows' => $rows, 'groups' => $groups])->render();
         }, 'Data Perizinan OSS-RBA.xls', [
             'Content-Type' => 'application/vnd-ms-excel',
             'Pragma' => 'no-cache',

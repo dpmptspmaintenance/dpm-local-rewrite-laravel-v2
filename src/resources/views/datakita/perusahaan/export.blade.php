@@ -17,26 +17,18 @@
             <thead>
                 <tr>
                     <th>No</th>
-                    <th>Nama Perusahaan</th>
-                    <th>NIB</th>
-                    <th>Alamat</th>
-                    <th>Kelurahan</th>
-                    <th>Kecamatan</th>
-                    <th>Email</th>
-                    <th>Tanggal Terbit OSS</th>
+                    @foreach ($columns as $column)
+                        <th>{{ ucwords(str_replace('_', ' ', $column)) }}</th>
+                    @endforeach
                 </tr>
             </thead>
             <tbody>
                 @foreach ($rows as $row)
                     <tr>
                         <td>{{ $loop->iteration }}</td>
-                        <td>{{ $row->nama_perusahaan }}</td>
-                        <td>NIB: {{ $row->nib }}</td>
-                        <td>{{ $row->alamat_perusahaan }}</td>
-                        <td>{{ $row->kelurahan }}</td>
-                        <td>{{ $row->kecamatan }}</td>
-                        <td>{{ $row->email }}</td>
-                        <td>{{ $row->day_of_tanggal_terbit_oss }}</td>
+                        @foreach ($columns as $column)
+                            <td>{{ $row->{$column} ?? '' }}</td>
+                        @endforeach
                     </tr>
                 @endforeach
             </tbody>

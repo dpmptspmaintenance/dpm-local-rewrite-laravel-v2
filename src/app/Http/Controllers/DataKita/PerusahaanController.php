@@ -5,6 +5,7 @@ namespace App\Http\Controllers\DataKita;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PerusahaanController extends Controller
 {
@@ -96,13 +97,15 @@ class PerusahaanController extends Controller
         $orderColumn = self::SORTABLE[$request->input('columnName', '')] ?? 'day_of_tanggal_terbit_oss';
         $orderDir = strtolower($request->input('columnSortOrder', 'desc')) === 'asc' ? 'asc' : 'desc';
 
+        $columns = array_values(array_diff(Schema::getColumnListing('2023_dp_nib_kantor'), ['id']));
+
         $rows = $this->baseQuery($request)
-            ->select(self::SELECT_COLUMNS)
+            ->select($columns)
             ->orderBy($orderColumn, $orderDir)
             ->get();
 
-        return response()->streamDownload(function () use ($rows) {
-            echo view('datakita.perusahaan.export', ['rows' => $rows])->render();
+        return response()->streamDownload(function () use ($rows, $columns) {
+            echo view('datakita.perusahaan.export', ['rows' => $rows, 'columns' => $columns])->render();
         }, 'Data Perusahaan.xls', ['Content-Type' => 'application/vnd-ms-excel']);
     }
 }

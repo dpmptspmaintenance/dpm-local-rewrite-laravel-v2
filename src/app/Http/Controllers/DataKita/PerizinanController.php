@@ -5,6 +5,7 @@ namespace App\Http\Controllers\DataKita;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PerizinanController extends Controller
 {
@@ -17,6 +18,7 @@ class PerizinanController extends Controller
         'kecamatan_usaha' => 'p.kecamatan_usaha',
         'sektor_pembina' => 'p.sektor_pembina',
         'uraian_status_respon' => 'i.uraian_status_respon',
+        'nama_dokumen' => 'i.nama_dokumen',
     ];
 
     private const SORTABLE = [
@@ -50,6 +52,13 @@ class PerizinanController extends Controller
                 ->where('uraian_status_respon', '!=', '')
                 ->orderBy('uraian_status_respon')
                 ->pluck('uraian_status_respon'),
+            'namaDokumen' => DB::table('2023_list_izin')
+                ->select('nama_dokumen')
+                ->distinct()
+                ->whereNotNull('nama_dokumen')
+                ->where('nama_dokumen', '!=', '')
+                ->orderBy('nama_dokumen')
+                ->pluck('nama_dokumen'),
         ]);
     }
 
@@ -69,6 +78,11 @@ class PerizinanController extends Controller
             } else {
                 $query->where($column, $value);
             }
+        }
+
+        $alamatUsaha = trim((string) $request->input('alamat_usaha', ''));
+        if ($alamatUsaha !== '') {
+            $query->where('p.alamat_usaha', 'like', "%{$alamatUsaha}%");
         }
 
         $search = trim((string) $request->input('search.value', $request->input('searchValue', '')));
@@ -91,7 +105,7 @@ class PerizinanController extends Controller
         'p.id_proyek', 'p.nib', 'p.nama_perusahaan', 'p.nama_proyek', 'p.tanggal_terbit_oss',
         'p.alamat_usaha', 'p.kecamatan_usaha', 'p.kelurahan_usaha', 'p.kbli', 'p.judul_kbli',
         'p.uraian_risiko_proyek', 'p.uraian_jenis_perusahaan', 'p.uraian_skala_usaha',
-        'p.sektor_pembina', 'p.luas_tanah', 'p.satuan_tanah', 'p.jumlah_investasi3',
+        'p.sektor_pembina', 'p.jumlah_investasi3',
         'k.alamat_perusahaan as alamat_kantor', 'k.email as email_kantor',
         'i.id_permohonan_izin', 'i.uraian_jenis_perizinan', 'i.nama_dokumen',
         'i.uraian_status_respon', 'i.day_of_tanggal_izin',
@@ -125,20 +139,37 @@ class PerizinanController extends Controller
         ]);
     }
 
+    private const EXPORT_JOINS = [
+        'p' => '2023_dp_proyek',
+        'k' => '2023_dp_nib_kantor',
+        'i' => '2023_list_izin',
+    ];
+
     public function export(Request $request)
     {
         $orderColumn = self::SORTABLE[$request->input('columnName', '')] ?? 'p.tanggal_proyek';
         $orderDir = strtolower($request->input('columnSortOrder', 'desc')) === 'asc' ? 'asc' : 'desc';
 
+        $groups = [];
+        $selects = [];
+
+        foreach (self::EXPORT_JOINS as $alias => $table) {
+            $columns = array_values(array_diff(Schema::getColumnListing($table), ['id']));
+            $groups[$alias] = $columns;
+            foreach ($columns as $column) {
+                $selects[] = DB::raw("`{$alias}`.`{$column}` as `{$alias}__{$column}`");
+            }
+        }
+
         $rows = $this->baseQuery($request)
-            ->select(self::SELECT_COLUMNS)
+            ->select($selects)
             ->orderBy($orderColumn, $orderDir)
             ->get();
 
         $filename = 'Data_Proyek_Izin_Kantor.xls';
 
-        return response()->streamDownload(function () use ($rows) {
-            echo view('datakita.perizinan.export', ['rows' => $rows])->render();
+        return response()->streamDownload(function () use ($rows, $groups) {
+            echo view('datakita.perizinan.export', ['rows' => $rows, 'groups' => $groups])->render();
         }, $filename, ['Content-Type' => 'application/vnd-ms-excel']);
     }
 }

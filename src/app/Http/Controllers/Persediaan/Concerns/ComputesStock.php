@@ -6,7 +6,7 @@ use App\Models\Persediaan\PenguncianLaporan;
 use App\Models\Persediaan\StokOpnameHeader;
 use App\Models\Persediaan\TransaksiDetail;
 use App\Models\Persediaan\TransaksiHeader;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**

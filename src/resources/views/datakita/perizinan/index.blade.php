@@ -106,6 +106,22 @@
                         </select>
                     </div>
 
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="nama_dokumen">Nama Dokumen</label>
+                        <select class="form-select" name="nama_dokumen" id="nama_dokumen">
+                            <option value="">-- Pilih Nama Dokumen --</option>
+                            @foreach ($namaDokumen as $dokumen)
+                                <option value="{{ $dokumen }}">{{ $dokumen }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-3 mt-4">
+                        <label class="fw-semibold" for="alamat_usaha">Alamat Usaha</label>
+                        <input type="text" class="form-control" name="alamat_usaha" id="alamat_usaha"
+                            placeholder="Cari alamat usaha...">
+                    </div>
+
                     <div class="col-12 mt-4">
                         <button id="cari" class="btn btn-primary w-100">Cari Data</button>
                     </div>

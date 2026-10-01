@@ -17,7 +17,40 @@ class RiwayatDokumenController extends Controller
 {
     use ChecksPersediaanAccess, ComputesStock;
 
-    public function index(Request $request)
+    /** Halaman riwayat BAST Masuk & Saldo Awal. */
+    public function indexMasuk(Request $request)
+    {
+        [$isAdmin, $filterBpp, $extras] = $this->commonData($request);
+
+        $docs = TransaksiHeader::query()
+            ->whereIn('jenis_mutasi', ['masuk', 'saldo_awal'])
+            ->with(['details.barang.rekening', 'details.barang.satuan'])
+            ->tap(fn ($q) => $this->scopeByUser($q, $isAdmin, auth()->id(), auth()->user()->bidang, $filterBpp))
+            ->get();
+
+        return view('persediaan.riwayat-dokumen.masuk', array_merge($extras, [
+            'masukDocs' => $this->buildDocs($docs),
+        ]));
+    }
+
+    /** Halaman riwayat Bon Pengeluaran. */
+    public function indexKeluar(Request $request)
+    {
+        [$isAdmin, $filterBpp, $extras] = $this->commonData($request);
+
+        $docs = TransaksiHeader::query()
+            ->where('jenis_mutasi', 'keluar')
+            ->with(['details.barang.rekening', 'details.barang.satuan'])
+            ->tap(fn ($q) => $this->scopeByUser($q, $isAdmin, auth()->id(), auth()->user()->bidang, $filterBpp))
+            ->get();
+
+        return view('persediaan.riwayat-dokumen.keluar', array_merge($extras, [
+            'keluarDocs' => $this->buildDocs($docs),
+        ]));
+    }
+
+    /** Data bersama kedua halaman riwayat: auth guard, filter BPP, opsi modal edit. */
+    private function commonData(Request $request): array
     {
         $this->abortIfNotAdminOrBpp();
 
@@ -25,36 +58,16 @@ class RiwayatDokumenController extends Controller
         $isAdmin = $this->isAdmin($user);
         $filterBpp = $isAdmin ? (int) $request->input('filter_bpp', 0) : 0;
 
-        $queryMasuk = TransaksiHeader::query()
-            ->whereIn('jenis_mutasi', ['masuk', 'saldo_awal'])
-            ->with(['details.barang.rekening', 'details.barang.satuan']);
-        $queryKeluar = TransaksiHeader::query()
-            ->where('jenis_mutasi', 'keluar')
-            ->with(['details.barang.rekening', 'details.barang.satuan']);
-
-        $this->scopeByUser($queryMasuk, $isAdmin, $user->id, $user->bidang, $filterBpp);
-        $this->scopeByUser($queryKeluar, $isAdmin, $user->id, $user->bidang, $filterBpp);
-
-        $masukDocs = $this->buildDocs($queryMasuk->get());
-        $keluarDocs = $this->buildDocs($queryKeluar->get());
-
         $users = User::query()->where('is_aktif', 1)->orderBy('nama')->get(['id', 'nama', 'bidang', 'is_bpp', 'is_admin_persediaan']);
-        $mapUsers = $users->pluck('nama', 'id')->all();
-        $arrBpp = $users->filter(fn ($u) => (int) $u->is_bpp === 1 || (int) $u->is_admin_persediaan === 1)->values();
 
-        $barangOptions = MasterBarang::query()->orderBy('nama_barang')->get(['id', 'nama_barang', 'harga_satuan']);
-        $stokOptions = $this->stockBatches();
-
-        return view('persediaan.riwayat-dokumen.index', [
-            'masukDocs' => $masukDocs,
-            'keluarDocs' => $keluarDocs,
-            'mapUsers' => $mapUsers,
-            'arrBpp' => $arrBpp,
+        return [$isAdmin, $filterBpp, [
+            'mapUsers' => $users->pluck('nama', 'id')->all(),
+            'arrBpp' => $users->filter(fn ($u) => (int) $u->is_bpp === 1 || (int) $u->is_admin_persediaan === 1)->values(),
             'filterBpp' => $filterBpp,
-            'barangOptions' => $barangOptions,
-            'stokOptions' => $stokOptions,
+            'barangOptions' => MasterBarang::query()->orderBy('nama_barang')->get(['id', 'nama_barang', 'harga_satuan']),
+            'stokOptions' => $this->stockBatches(),
             'isAdmin' => $isAdmin,
-        ]);
+        ]];
     }
 
     /** 1. Ajukan draft ke admin. */
@@ -206,12 +219,12 @@ class RiwayatDokumenController extends Controller
                 $header->update([
                     'tanggal_transaksi' => $validated['tanggal_transaksi'],
                     'pihak_terkait' => $validated['pihak_terkait'],
-                    'alasan_pengambilan' => $validated['alasan_pengambilan'] ?: null,
-                    'no_bukti' => $validated['no_bukti'] ?: null,
+                    'alasan_pengambilan' => ($validated['alasan_pengambilan'] ?? null) ?: null,
+                    'no_bukti' => ($validated['no_bukti'] ?? null) ?: null,
                     'ttd_kiri' => $validated['ttd_kiri'],
-                    'ttd_tengah' => $validated['ttd_tengah'] ?: null,
+                    'ttd_tengah' => ($validated['ttd_tengah'] ?? null) ?: null,
                     'ttd_kanan' => $validated['ttd_kanan'],
-                    'ttd_sekretaris' => $validated['ttd_sekretaris'] ?: 'Anton Siswartono, S.Sos, M.M',
+                    'ttd_sekretaris' => ($validated['ttd_sekretaris'] ?? null) ?: 'Anton Siswartono, S.Sos, M.M',
                     'lampiran' => $finalFiles,
                     'status' => $header->status === 'ditolak' ? 'draft' : $header->status,
                 ]);
@@ -230,7 +243,7 @@ class RiwayatDokumenController extends Controller
                     if ($qty > 0) {
                         TransaksiDetail::query()->where('id', (int) $idDtl)->update([
                             'qty' => $qty,
-                            'harga_satuan' => (float) str_replace('.', '', (string) ($validated['harga_detail'][$i] ?? 0)),
+                            'harga_satuan' => $this->parseHarga($validated['harga_detail'][$i] ?? 0),
                         ]);
                     }
                 }
@@ -245,7 +258,7 @@ class RiwayatDokumenController extends Controller
                             'id_header' => $header->id,
                             'id_barang' => (int) $idBarang,
                             'qty' => $qty,
-                            'harga_satuan' => (float) str_replace('.', '', (string) ($validated['new_harga'][$i] ?? 0)),
+                            'harga_satuan' => $this->parseHarga($validated['new_harga'][$i] ?? 0),
                         ]);
                     }
                 }
@@ -313,5 +326,32 @@ class RiwayatDokumenController extends Controller
     private function uploadDir(string $jenisMutasi): string
     {
         return in_array($jenisMutasi, ['masuk', 'saldo_awal'], true) ? 'bast' : 'bon';
+    }
+
+    /**
+     * Parse angka harga dari form. Fix bug 100x: parser lama cuma
+     * str_replace('.', '', $x) — input "25.000,00" (format ribuan Indonesia +
+     * 2 digit koma) jadi 2500000 (100x lipat) karena koma desimal diabaikan.
+     * Aturan: ada ',' → '.' = ribuan & ',' = desimal; tak ada ',' → '.' jadi
+     * ribuan bila pola ribuan valid (≥1 dot, tiap grup tepat 3 digit), sisanya
+     * dianggap desimal titik biasa.
+     */
+    private function parseHarga(mixed $value): float
+    {
+        $v = trim((string) $value);
+
+        if ($v === '' || ! preg_match('/^\d[\d\.,]*$/', $v)) {
+            return 0.0;
+        }
+
+        if (str_contains($v, ',')) {
+            return (float) str_replace(',', '.', str_replace('.', '', $v));
+        }
+
+        if (substr_count($v, '.') >= 1 && preg_match('/^\d{1,3}(\.\d{3})+$/', $v)) {
+            return (float) str_replace('.', '', $v);
+        }
+
+        return (float) $v;
     }
 }

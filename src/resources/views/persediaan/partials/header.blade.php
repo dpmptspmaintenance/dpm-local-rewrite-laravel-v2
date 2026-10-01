@@ -134,9 +134,17 @@
                 @endif
 
                 @if (! $isPegawaiBiasa)
-                    <a href="{{ route('persediaan.riwayat-dokumen.index') }}" class="list-group-item list-group-item-action py-3 {{ request()->routeIs('persediaan.riwayat-dokumen.*') ? 'active' : '' }}">
-                        <i class="bi bi-journal-text me-2"></i> Riwayat Dokumen
+                    @php $isRiwayat = request()->routeIs('persediaan.riwayat-dokumen.*'); @endphp
+                    <a class="list-group-item list-group-item-action py-3 d-flex justify-content-between align-items-center {{ $isRiwayat ? 'active' : '' }}" data-bs-toggle="collapse" href="#menuRiwayat" role="button">
+                        <span><i class="bi bi-journal-text me-2"></i> Riwayat Dokumen</span>
+                        <i class="bi bi-chevron-down small"></i>
                     </a>
+                    <div class="collapse {{ $isRiwayat ? 'show' : '' }}" id="menuRiwayat">
+                        <div class="bg-light ps-4 py-1">
+                            <a href="{{ route('persediaan.riwayat-dokumen.index') }}" class="d-block py-2 text-decoration-none small {{ request()->routeIs('persediaan.riwayat-dokumen.index') ? 'fw-bold text-primary' : 'text-dark' }}">Riwayat BAST Masuk</a>
+                            <a href="{{ route('persediaan.riwayat-dokumen.keluar') }}" class="d-block py-2 text-decoration-none small {{ request()->routeIs('persediaan.riwayat-dokumen.keluar') ? 'fw-bold text-danger' : 'text-dark' }}">Riwayat Bon Keluar</a>
+                        </div>
+                    </div>
                 @endif
 
                 <a href="{{ route('persediaan.laporan-pemakaian.index') }}" class="list-group-item list-group-item-action py-3 {{ request()->routeIs('persediaan.laporan-pemakaian.*') ? 'active' : '' }}">

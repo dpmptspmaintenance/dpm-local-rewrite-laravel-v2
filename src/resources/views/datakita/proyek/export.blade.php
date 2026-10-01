@@ -17,42 +17,18 @@
             <thead>
                 <tr>
                     <th>No</th>
-                    <th>Nama Perusahaan</th>
-                    <th>Nama Proyek</th>
-                    <th>Tanggal Terbit</th>
-                    <th>NIB</th>
-                    <th>Alamat</th>
-                    <th>Kecamatan</th>
-                    <th>Kelurahan</th>
-                    <th>KBLI</th>
-                    <th>Judul KBLI</th>
-                    <th>Resiko Proyek</th>
-                    <th>Jenis Perusahaan</th>
-                    <th>Skala Usaha</th>
-                    <th>Sektor Pembina</th>
-                    <th>Luas Tanah</th>
-                    <th>Jumlah Investasi</th>
+                    @foreach ($columns as $column)
+                        <th>{{ ucwords(str_replace('_', ' ', $column)) }}</th>
+                    @endforeach
                 </tr>
             </thead>
             <tbody>
                 @foreach ($rows as $row)
                     <tr>
                         <td>{{ $loop->iteration }}</td>
-                        <td>{{ $row->nama_perusahaan }}</td>
-                        <td>{{ $row->nama_proyek }}</td>
-                        <td>{{ $row->tanggal_terbit_oss }}</td>
-                        <td>{{ $row->nib }}</td>
-                        <td>{{ $row->alamat_usaha }}</td>
-                        <td>{{ $row->kecamatan_usaha }}</td>
-                        <td>{{ $row->kelurahan_usaha }}</td>
-                        <td>{{ $row->kbli }}</td>
-                        <td>{{ $row->judul_kbli }}</td>
-                        <td>{{ $row->uraian_risiko_proyek }}</td>
-                        <td>{{ $row->uraian_jenis_perusahaan }}</td>
-                        <td>{{ $row->uraian_skala_usaha }}</td>
-                        <td>{{ $row->sektor_pembina }}</td>
-                        <td>{{ $row->luas_tanah.' '.$row->satuan_tanah }}</td>
-                        <td>{{ $row->jumlah_investasi3 }}</td>
+                        @foreach ($columns as $column)
+                            <td>{{ $row->{$column} ?? '' }}</td>
+                        @endforeach
                     </tr>
                 @endforeach
             </tbody>

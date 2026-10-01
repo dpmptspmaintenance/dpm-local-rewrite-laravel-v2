@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ArsipDigital\ConnectGoogleController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DataKita\DaftarFileController;
 use App\Http\Controllers\DataKita\OssRbaController;
@@ -44,7 +45,6 @@ use App\Http\Controllers\RapatKita\JadwalController;
 use App\Http\Controllers\RapatKita\NotulenController;
 use App\Http\Controllers\SikenutController;
 use App\Http\Controllers\SiperdafitController;
-use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -74,16 +74,6 @@ Route::middleware('auth')->group(function () {
         Route::get('/notulen/{notulen}', [NotulenController::class, 'show'])->name('notulen.show');
         Route::get('/notulen/{notulen}/edit', [NotulenController::class, 'edit'])->name('notulen.edit');
         Route::put('/notulen/{notulen}', [NotulenController::class, 'update'])->name('notulen.update');
-    });
-
-    Route::prefix('user')->name('user.')->group(function () {
-        Route::get('/', [UserController::class, 'index'])->name('index');
-        Route::post('/get-users', [UserController::class, 'getUsers'])->name('get-users');
-        Route::post('/add-user', [UserController::class, 'addUser'])->name('add-user');
-        Route::post('/add-gmail', [UserController::class, 'addGmail'])->name('add-gmail');
-        Route::post('/toggle-status', [UserController::class, 'toggleStatus'])->name('toggle-status');
-        Route::post('/update-access', [UserController::class, 'updateAccess'])->name('update-access');
-        Route::post('/batch-update-access', [UserController::class, 'batchUpdateAccess'])->name('batch-update-access');
     });
 
     Route::prefix('sikenut')->name('sikenut.')->group(function () {
@@ -135,7 +125,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/transaksi-bon', [TransaksiBonController::class, 'index'])->name('transaksi-bon.index');
         Route::post('/transaksi-bon', [TransaksiBonController::class, 'store'])->name('transaksi-bon.store');
 
-        Route::get('/riwayat-dokumen', [RiwayatDokumenController::class, 'index'])->name('riwayat-dokumen.index');
+        Route::get('/riwayat-dokumen', [RiwayatDokumenController::class, 'indexMasuk'])->name('riwayat-dokumen.index');
+        Route::get('/riwayat-dokumen/bon', [RiwayatDokumenController::class, 'indexKeluar'])->name('riwayat-dokumen.keluar');
         Route::post('/riwayat-dokumen/ajukan', [RiwayatDokumenController::class, 'ajukanKeAdmin'])->name('riwayat-dokumen.ajukan');
         Route::post('/riwayat-dokumen/hapus', [RiwayatDokumenController::class, 'hapusDokumen'])->name('riwayat-dokumen.hapus');
         Route::post('/riwayat-dokumen/approve', [RiwayatDokumenController::class, 'prosesApproval'])->name('riwayat-dokumen.approve');
@@ -370,4 +361,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/lppd/target-investasi', [LppdController::class, 'storeTargetInvestasi'])->name('lppd.target-investasi.store');
         Route::get('/lppd/target-investasi/export', [LppdController::class, 'exportTargetInvestasi'])->name('lppd.target-investasi.export');
     });
+});
+
+// Koneksi awal Google Drive (mode auth oauth — Gmail gratis). Hanya dipakai
+// SEKALI untuk mendapatkan ARSIP_DRIVE_OAUTH_REFRESH_TOKEN; setelah itu
+// tidak dipakai lagi sampai token dicabut manual user.
+Route::prefix('arsip/oauth')->name('arsip.connect-google')->group(function (): void {
+    Route::get('/', [ConnectGoogleController::class, 'redirect']);
+    Route::get('/callback', [ConnectGoogleController::class, 'callback'])->name('.callback');
 });

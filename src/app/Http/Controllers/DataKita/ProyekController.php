@@ -5,6 +5,7 @@ namespace App\Http\Controllers\DataKita;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ProyekController extends Controller
 {
@@ -34,6 +35,8 @@ class ProyekController extends Controller
         'uraian_skala_usaha' => 'p.uraian_skala_usaha',
         'sektor_pembina' => 'p.sektor_pembina',
         'jumlah_investasi3' => 'p.jumlah_investasi3',
+        'email' => 'p.email',
+        'nomor_telp' => 'p.nomor_telp',
     ];
 
     private const SELECT_COLUMNS = [
@@ -41,7 +44,7 @@ class ProyekController extends Controller
         'p.alamat_usaha', 'p.kecamatan_usaha', 'p.kelurahan_usaha', 'p.kbli',
         'p.judul_kbli', 'p.uraian_risiko_proyek', 'p.uraian_jenis_perusahaan',
         'p.uraian_skala_usaha', 'p.sektor_pembina', 'p.luas_tanah', 'p.satuan_tanah',
-        'p.jumlah_investasi3',
+        'p.jumlah_investasi3', 'p.email', 'p.nomor_telp',
     ];
 
     public function index()
@@ -126,13 +129,15 @@ class ProyekController extends Controller
         $orderColumn = self::SORTABLE[$request->input('columnName', '')] ?? 'p.tanggal_proyek';
         $orderDir = strtolower($request->input('columnSortOrder', 'desc')) === 'asc' ? 'asc' : 'desc';
 
+        $columns = array_values(array_diff(Schema::getColumnListing('2023_dp_proyek'), ['id']));
+
         $rows = $this->baseQuery($request)
-            ->select(self::SELECT_COLUMNS)
+            ->select($columns)
             ->orderBy($orderColumn, $orderDir)
             ->get();
 
-        return response()->streamDownload(function () use ($rows) {
-            echo view('datakita.proyek.export', ['rows' => $rows])->render();
+        return response()->streamDownload(function () use ($rows, $columns) {
+            echo view('datakita.proyek.export', ['rows' => $rows, 'columns' => $columns])->render();
         }, 'Data Proyek.xls', ['Content-Type' => 'application/vnd-ms-excel']);
     }
 }

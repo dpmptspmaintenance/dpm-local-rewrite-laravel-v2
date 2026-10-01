@@ -126,6 +126,8 @@
                     }
                 },
                 { data: 'jumlah_investasi3', name: 'jumlah_investasi3', title: 'Jumlah Investasi' },
+                { data: 'email', name: 'email', title: 'Email' },
+                { data: 'nomor_telp', name: 'nomor_telp', title: 'No. Telp' },
             ]
         });
     })()
