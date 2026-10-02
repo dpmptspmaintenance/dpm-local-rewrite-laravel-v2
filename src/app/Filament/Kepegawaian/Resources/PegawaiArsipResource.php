@@ -18,6 +18,8 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
@@ -176,6 +178,19 @@ class PegawaiArsipResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['nip', 'judul', 'kategori'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
+    {
+        return $record->judul ?? 'Arsip Pegawai';
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'NIP' => $record->nip ?? '—',
+            'Kategori' => $record->kategori ?? '—',
+        ];
     }
 
     /**

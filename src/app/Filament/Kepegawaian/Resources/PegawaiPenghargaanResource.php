@@ -18,6 +18,8 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Daftar mentah riwayat penghargaan pegawai (pegawai_penghargaan) — sumber
@@ -177,5 +179,18 @@ class PegawaiPenghargaanResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['nip', 'nama_penghargaan', 'nomor_sk_penghargaan'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
+    {
+        return $record->nama_penghargaan ?? 'Penghargaan';
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'NIP' => $record->nip ?? '—',
+            'No. SK' => $record->nomor_sk_penghargaan ?? '—',
+        ];
     }
 }

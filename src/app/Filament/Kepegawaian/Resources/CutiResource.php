@@ -20,7 +20,9 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class CutiResource extends Resource
 {
@@ -186,5 +188,19 @@ class CutiResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['no_surat', 'nip', 'nama'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
+    {
+        return $record->nama ?? $record->no_surat ?? 'Cuti';
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'Jenis' => $record->jenis ?? '—',
+            'No. Surat' => $record->no_surat ?? '—',
+            'NIP' => $record->nip ?? '—',
+        ];
     }
 }

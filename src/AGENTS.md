@@ -65,3 +65,15 @@ This app runs inside Docker (container `dpmptsp-app`), and the host has **no PHP
    docker exec dpmptsp-app chown -R www-data:www-data storage bootstrap/cache
    ```
 4. Do not `rm`/`touch` files under `storage/framework/views`, `storage/framework/cache`, or `bootstrap/cache` from host tools as a "fix" — that recreates the same mixed-ownership problem with whatever UID the host tool runs as.
+
+## Database migrations — production safety
+
+When `APP_ENV=production`, **NEVER run `php artisan migrate`**. Running migrations against a production database risks schema/data damage that cannot be easily rolled back.
+
+**Rule:**
+- In **local/development**: `php artisan migrate --force` is acceptable for applying new migrations.
+- In **production**: Do NOT run `php artisan migrate`. Instead, generate the raw SQL that the migration would execute and provide it to the user as a manual SQL script they can review and apply themselves. You can get the SQL by running:
+  ```sh
+  docker exec dpmptsp-app php artisan migrate --pretend --force
+  ```
+  This outputs the SQL statements without executing them. Copy the output, format it as a `.sql` file or code block, and give it to the user to run manually against the production database.
