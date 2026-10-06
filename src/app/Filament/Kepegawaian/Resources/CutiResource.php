@@ -190,6 +190,12 @@ class CutiResource extends Resource
         return ['no_surat', 'nip', 'nama'];
     }
 
+    /** Kategori global search muncul setelah Pegawai (sort 2). */
+    public static function getGlobalSearchSort(): ?int
+    {
+        return 2;
+    }
+
     public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
     {
         return $record->nama ?? $record->no_surat ?? 'Cuti';

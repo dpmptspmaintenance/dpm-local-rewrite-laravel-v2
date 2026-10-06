@@ -219,4 +219,13 @@ class PegawaiProfilResource extends Resource
     {
         return ['nama', 'nip', 'jabatan'];
     }
+
+    /**
+     * Urutan kategori di hasil global search navbar: pegawai dulu (sort 1),
+     * baru cuti (sort 2). Filament mengurut naik lewat getGlobalSearchSort().
+     */
+    public static function getGlobalSearchSort(): ?int
+    {
+        return 1;
+    }
 }
