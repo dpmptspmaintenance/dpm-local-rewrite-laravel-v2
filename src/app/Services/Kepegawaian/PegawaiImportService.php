@@ -6,6 +6,9 @@ use App\Models\Kepegawaian\PegawaiAnak;
 use App\Models\Kepegawaian\PegawaiKompetensi;
 use App\Models\Kepegawaian\PegawaiPenghargaan;
 use App\Models\Kepegawaian\PegawaiProfil;
+use App\Models\Kepegawaian\PegawaiRiwayatCpns;
+use App\Models\Kepegawaian\PegawaiRiwayatJabatan;
+use App\Models\Kepegawaian\PegawaiRiwayatPangkat;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -154,6 +157,67 @@ class PegawaiImportService
                 'nomor_sk_penghargaan' => $p['nomor_sk_penghargaan'] ?? null,
                 'tanggal_sk_penghargaan' => $this->parseDate($p['tanggal_sk_penghargaan'] ?? null),
                 'file_penghargaan_url' => $p['file_penghargaan_url'] ?? null,
+            ]);
+        }
+
+        // Riwayat CPNS: satu baris per pegawai — sumber mengirim objek
+        // tunggal (bukan array), tapi tetap ditangani kalau berbentuk array.
+        PegawaiRiwayatCpns::where('nip', $nip)->delete();
+        $cpns = $record['riwayat_cpns'] ?? null;
+        if (is_array($cpns) && array_is_list($cpns)) {
+            $cpns = $cpns[0] ?? null;
+        }
+        if (is_array($cpns) && $cpns !== []) {
+            PegawaiRiwayatCpns::create([
+                'nip' => $nip,
+                'file_field_name' => $cpns['file_field_name'] ?? null,
+                'file_url' => $cpns['file_url'] ?? null,
+                'gaji' => $cpns['gaji'] ?? null,
+                'golongan' => $cpns['golongan'] ?? null,
+                'jabatan' => $cpns['jabatan'] ?? null,
+                'kd_golongan' => $cpns['kd_golongan'] ?? null,
+                'masa_kerja_bulan' => $this->toIntOrNull($cpns['masa_kerja_bulan'] ?? null),
+                'masa_kerja_tahun' => $this->toIntOrNull($cpns['masa_kerja_tahun'] ?? null),
+                'nomor_sk' => $cpns['nomor_sk'] ?? null,
+                'tanggal_sk' => $this->parseDate($cpns['tanggal_sk'] ?? null),
+                'tmt_sk' => $this->parseDate($cpns['tmt_sk'] ?? null),
+                'unit_kerja' => $cpns['unit_kerja'] ?? null,
+            ]);
+        }
+
+        PegawaiRiwayatJabatan::where('nip', $nip)->delete();
+        foreach ($record['riwayat_jabatan'] ?? [] as $j) {
+            PegawaiRiwayatJabatan::create([
+                'nip' => $nip,
+                'no_urut' => $this->toIntOrNull($j['no'] ?? null),
+                'file_jabatan_url' => $j['file_jabatan_url'] ?? null,
+                'jabatan_baru' => $j['jabatan_baru'] ?? null,
+                'jenis_jabatan' => $j['jenis_jabatan'] ?? null,
+                'nomor_sk_jabatan' => $j['nomor_sk_jabatan'] ?? null,
+                'opd' => $j['opd'] ?? null,
+                'tanggal_sk_jabatan' => $this->parseDate($j['tanggal_sk_jabatan'] ?? null),
+                'tmt_sk_jabatan' => $this->parseDate($j['tmt_sk_jabatan'] ?? null),
+                'unit_kerja' => $j['unit_kerja'] ?? null,
+                'verifikasi' => $j['verifikasi'] ?? null,
+            ]);
+        }
+
+        PegawaiRiwayatPangkat::where('nip', $nip)->delete();
+        foreach ($record['riwayat_pangkat'] ?? [] as $pg) {
+            PegawaiRiwayatPangkat::create([
+                'nip' => $nip,
+                'no_urut' => $this->toIntOrNull($pg['no'] ?? null),
+                'file_pangkat_url' => $pg['file_pangkat_url'] ?? null,
+                'golongan' => $pg['golongan'] ?? null,
+                'jenis_kenaikan_pangkat' => $pg['jenis_kenaikan_pangkat'] ?? null,
+                'masa_kerja_bulan' => $this->toIntOrNull($pg['masa_kerja_bulan'] ?? null),
+                'masa_kerja_tahun' => $this->toIntOrNull($pg['masa_kerja_tahun'] ?? null),
+                'nomor_sk_pangkat' => $pg['nomor_sk_pangkat'] ?? null,
+                'pangkat' => $pg['pangkat'] ?? null,
+                'siasn' => $pg['siasn'] ?? null,
+                'tanggal_sk_pangkat' => $this->parseDate($pg['tanggal_sk_pangkat'] ?? null),
+                'tmt_sk_pangkat' => $this->parseDate($pg['tmt_sk_pangkat'] ?? null),
+                'verifikasi' => $pg['verifikasi'] ?? null,
             ]);
         }
     }

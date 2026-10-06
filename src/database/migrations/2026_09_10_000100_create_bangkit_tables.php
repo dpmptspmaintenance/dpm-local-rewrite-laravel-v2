@@ -119,7 +119,7 @@ return new class extends Migration
             $table->text('keterangan')->nullable();
             $table->string('link_foto', 255)->nullable();
             $table->unsignedInteger('created_by')->nullable();
-            $table->unsignedInteger('modified_by')->nullable();
+            $table->string('modified_by', 255)->nullable(); // legacy isi teks "direct database"
             $table->timestamp('created_at')->nullable()->useCurrent();
             $table->timestamp('modified_at')->nullable();
             $table->boolean('is_aktif')->default(true);

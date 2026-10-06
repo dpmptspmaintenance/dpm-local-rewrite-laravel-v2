@@ -30,6 +30,7 @@ use Illuminate\Notifications\Notifiable;
     'is_admin_persediaan',
     'is_admin_kepegawaian',
     'is_admin_arsip',
+    'is_admin_bangkit',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
@@ -67,6 +68,16 @@ class User extends Authenticatable implements FilamentUser
     public function isArsipAdmin(): bool
     {
         return (int) $this->role === 1 || (bool) $this->is_admin_arsip;
+    }
+
+    /**
+     * Admin modul Bangkit: role 1 atau flag is_admin_bangkit. Dipakai
+     * ChecksBangkitAccess — legacy memperlakukan role 1 (superadmin) sebagai
+     * admin penuh; flag tambahan biar bisa didelegasikan tanpa role global.
+     */
+    public function isBangkitAdmin(): bool
+    {
+        return (int) $this->role === 1 || (bool) $this->is_admin_bangkit;
     }
 
     /**

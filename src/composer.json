@@ -10,6 +10,7 @@
         "dompdf/dompdf": "^3.1",
         "filament/filament": "^5.7",
         "google/apiclient": "^2.15",
+        "iio/libmergepdf": "^4.0",
         "laravel/framework": "^13.17",
         "laravel/socialite": "^5.21",
         "laravel/tinker": "^3.0",

@@ -32,7 +32,7 @@
 
     <x-filament::section
         class="mt-6"
-        description="Sesuai syarat pengusulan: SLKS harus diusulkan urut dari tingkat terendah yang belum pernah dimiliki — tidak boleh lompat (mis. masa kerja 23 tahun tanpa SLKS sama sekali wajib diusulkan 10 tahun dulu, bukan langsung 20 tahun). Bila tingkat lebih tinggi tercatat tapi yang lebih rendah kosong, tingkat bawah dianggap sudah terpenuhi (anggap belum diisi di SIMPATIK). Data 'dimiliki' berasal dari impor SISDM maupun tambahan manual (halaman Daftar Penghargaan) — pakai tambah manual bila SIMPATIK/SISDM staf belum diisi lengkap."
+        description="Sesuai syarat pengusulan: SLKS harus diusulkan urut dari tingkat terendah yang belum pernah dimiliki — tidak boleh lompat (mis. masa kerja 23 tahun tanpa SLKS sama sekali wajib diusulkan 10 tahun dulu, bukan langsung 20 tahun). Bila tingkat lebih tinggi tercatat tapi yang lebih rendah kosong, tingkat bawah dianggap sudah terpenuhi (anggap belum diisi di SIMPATIK). Data 'dimiliki' berasal dari impor SISDM maupun tambahan manual (halaman Daftar Penghargaan). Kolom 'Pengusulan Terakhir' = DRH Satya Lancana terbaru (tahun + status); 'Bisa Diusulkan' = boleh diajukan lagi atau tidak — DRH berstatus Sukses mengunci tingkat itu, sedangkan Draft/Diusulkan/Ditolak bebas diajukan ulang (mis. 2024 diusulkan belum sukses, 2026 boleh ajukan lagi)."
     >
         <x-slot name="heading">Checklist per Pegawai</x-slot>
 

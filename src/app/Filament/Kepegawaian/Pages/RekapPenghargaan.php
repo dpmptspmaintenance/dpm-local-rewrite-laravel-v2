@@ -3,7 +3,9 @@
 namespace App\Filament\Kepegawaian\Pages;
 
 use App\Exports\Kepegawaian\RekapPenghargaanSheet;
+use App\Filament\Kepegawaian\Resources\DrhSatyaLancanaResource;
 use App\Filament\Kepegawaian\Resources\PegawaiProfilResource;
+use App\Models\Kepegawaian\DrhSatyaLancana;
 use App\Models\Kepegawaian\PegawaiProfil;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -128,6 +130,14 @@ class RekapPenghargaan extends Page implements HasActions, HasSchemas, HasTable
                     ->formatStateUsing(fn ($state): string => $state.' th')
                     ->sortable()
                     ->alignEnd(),
+                TextColumn::make('masa_kerja_duk')
+                    ->label('Masa Kerja DUK')
+                    ->state(fn (array $record): ?string => $record['masa_kerja_duk'])
+                    ->badge()
+                    ->color('warning')
+                    ->tooltip('Masa kerja hasil perhitungan resmi dari dokumen DUK terakhir (bukan turunan NIP).')
+                    ->placeholder('—')
+                    ->toggleable(),
                 IconColumn::make('has_10')
                     ->label('10 Th')
                     ->boolean()
@@ -156,6 +166,17 @@ class RekapPenghargaan extends Page implements HasActions, HasSchemas, HasTable
                     ->tooltip('Total seluruh penghargaan tercatat (bukan cuma SLKS — semua jenis dihitung).')
                     ->alignEnd()
                     ->sortable(),
+                TextColumn::make('drh_terakhir')
+                    ->label('Pengusulan Terakhir')
+                    ->state(fn (array $record): ?string => $record['drh_terakhir_status'] === null
+                        ? null
+                        : ($record['drh_terakhir_tahun'] ?? '?').' — '.(DrhSatyaLancana::STATUSES[$record['drh_terakhir_status']] ?? $record['drh_terakhir_status']))
+                    ->badge()
+                    ->color(fn (array $record): string => $record['drh_terakhir_status'] === null
+                        ? 'gray'
+                        : (DrhSatyaLancana::STATUS_COLORS[$record['drh_terakhir_status']] ?? 'gray'))
+                    ->placeholder('—')
+                    ->toggleable(),
                 TextColumn::make('perlu_diusulkan')
                     ->label('Perlu Diusulkan')
                     ->badge()
@@ -163,6 +184,21 @@ class RekapPenghargaan extends Page implements HasActions, HasSchemas, HasTable
                         ? $record['perlu_diusulkan'].' Tahun'
                         : 'Lengkap')
                     ->color(fn (array $record): string => $record['perlu_diusulkan'] !== null ? 'warning' : 'success'),
+                TextColumn::make('bisa_diusulkan')
+                    ->label('Bisa Diusulkan')
+                    ->badge()
+                    ->state(fn (array $record): string => $record['alasan_bisa_diusulkan'])
+                    ->color(fn (array $record): string => $record['bisa_diusulkan']
+                        ? 'success'
+                        : ($record['perlu_diusulkan'] !== null ? 'danger' : 'gray')),
+            ])
+            ->recordActions([
+                Action::make('buatDrh')
+                    ->label('Buat DRH')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('primary')
+                    ->url(fn (array $record): string => DrhSatyaLancanaResource::getUrl('create', ['nip' => $record['nip']]))
+                    ->openUrlInNewTab(),
             ])
             ->recordUrl(fn (array $record): string => PegawaiProfilResource::getUrl('view', ['record' => $record['nip']]))
             ->emptyStateHeading('Tidak ada PNS aktif dengan masa kerja ≥ 10 tahun');

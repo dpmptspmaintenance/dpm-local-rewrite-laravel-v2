@@ -77,3 +77,14 @@ When `APP_ENV=production`, **NEVER run `php artisan migrate`**. Running migratio
   docker exec dpmptsp-app php artisan migrate --pretend --force
   ```
   This outputs the SQL statements without executing them. Copy the output, format it as a `.sql` file or code block, and give it to the user to run manually against the production database.
+
+## Database test data — NEVER truncate real data
+
+Real user data lives in the databases (e.g. `kepegawaian`/`mysql`). Some tables hold hand-entered records the user created via the UI (DRH Satya Lancana, DUK imports, penghargaan manual, arsip, etc.).
+
+**Rule:**
+- NEVER run `TRUNCATE`, `DELETE` without a `WHERE`, or `->delete()` on a whole table to clean up.
+- Only delete rows **you created yourself during this test run**, and target them by a unique identifier (the record's id returned from your own insert, or a unique test marker) — never by table-wide operations.
+- Prefer creating a test record, capturing its `id`, and deleting exactly that id in a `finally`/cleanup step.
+- If you need an empty state for a test, do not empty the real table — instead scope your query/test to the specific test batch/record.
+- When in doubt, leave the data and tell the user; never wipe to get a clean slate.

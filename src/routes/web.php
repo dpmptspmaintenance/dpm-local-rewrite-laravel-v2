@@ -2,6 +2,12 @@
 
 use App\Http\Controllers\ArsipDigital\ConnectGoogleController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Bangkit\BangkitController;
+use App\Http\Controllers\Bangkit\BangkitUserController;
+use App\Http\Controllers\Bangkit\BarangController;
+use App\Http\Controllers\Bangkit\PermohonanPerbaikanController;
+use App\Http\Controllers\Bangkit\RekapController;
+use App\Http\Controllers\Bangkit\SdiaController;
 use App\Http\Controllers\DataKita\DaftarFileController;
 use App\Http\Controllers\DataKita\OssRbaController;
 use App\Http\Controllers\DataKita\GrafikKbliController;
@@ -360,6 +366,95 @@ Route::middleware('auth')->group(function () {
         Route::get('/lppd/target-investasi', [LppdController::class, 'targetInvestasi'])->name('lppd.target-investasi.index');
         Route::post('/lppd/target-investasi', [LppdController::class, 'storeTargetInvestasi'])->name('lppd.target-investasi.store');
         Route::get('/lppd/target-investasi/export', [LppdController::class, 'exportTargetInvestasi'])->name('lppd.target-investasi.export');
+    });
+
+    // Modul Bangkit (Barang Kita + SDIA Persediaan) — port aplikasi CodeIgniter
+    // lama `/bangkit`. Gating role dilakukan di controller via ChecksBangkitAccess.
+    Route::prefix('bangkit')->name('bangkit.')->group(function () {
+        Route::get('/', [BangkitController::class, 'index'])->name('index');
+
+        Route::prefix('barang')->name('barang.')->group(function () {
+            Route::get('/cari', [BarangController::class, 'cari'])->name('cari');
+            Route::post('/cari', [BarangController::class, 'aksiCari'])->name('aksi-cari');
+            Route::get('/hasil', [BarangController::class, 'hasil'])->name('hasil');
+            Route::get('/data-saya', [BarangController::class, 'dataSaya'])->name('data-saya');
+            Route::get('/kartu-inventaris', [BarangController::class, 'kartuInventaris'])->name('kartu-inventaris');
+            Route::post('/kartu-inventaris', [BarangController::class, 'aksiKartuInventaris'])->name('aksi-kartu-inventaris');
+            Route::get('/kartu-inventaris/hasil', [BarangController::class, 'kartuInventarisHasil'])->name('kartu-inventaris-hasil');
+            Route::get('/tambah', [BarangController::class, 'tambah'])->name('tambah');
+            Route::post('/', [BarangController::class, 'store'])->name('store');
+            Route::get('/{id}/ubah', [BarangController::class, 'ubah'])->name('ubah');
+            Route::put('/{id}', [BarangController::class, 'update'])->name('update');
+            Route::delete('/{id}', [BarangController::class, 'hapus'])->name('hapus');
+            Route::get('/{id}/history', [BarangController::class, 'history'])->name('history');
+        });
+
+        Route::prefix('permohonan')->name('permohonan.')->group(function () {
+            Route::get('/barang/{idBarang}/ajukan', [PermohonanPerbaikanController::class, 'form'])->name('form');
+            Route::post('/barang/{idBarang}/ajukan', [PermohonanPerbaikanController::class, 'store'])->name('store');
+            Route::get('/barang/{idBarang}/list', [PermohonanPerbaikanController::class, 'list'])->name('list');
+            Route::get('/{idPermohonan}/ubah', [PermohonanPerbaikanController::class, 'formUbah'])->name('form-ubah');
+            Route::put('/{idPermohonan}', [PermohonanPerbaikanController::class, 'update'])->name('update');
+            Route::delete('/{idPermohonan}', [PermohonanPerbaikanController::class, 'hapus'])->name('hapus');
+            Route::get('/verifikasi', [PermohonanPerbaikanController::class, 'listVerifikasi'])->name('verifikasi-list');
+            Route::get('/{idPermohonan}/verifikasi', [PermohonanPerbaikanController::class, 'formVerifikasi'])->name('form-verifikasi');
+            Route::post('/{idPermohonan}/verifikasi', [PermohonanPerbaikanController::class, 'verifikasi'])->name('verifikasi');
+            Route::get('/selesai', [PermohonanPerbaikanController::class, 'listSelesai'])->name('selesai-list');
+            Route::get('/{idPermohonan}/selesai', [PermohonanPerbaikanController::class, 'formSelesai'])->name('form-selesai');
+            Route::post('/{idPermohonan}/selesai', [PermohonanPerbaikanController::class, 'selesai'])->name('selesai');
+        });
+
+        Route::prefix('rekap')->name('rekap.')->group(function () {
+            Route::get('/perbulan/{bulan?}', [RekapController::class, 'rekapPerbulan'])->name('perbulan');
+            Route::post('/perbulan', [RekapController::class, 'aksiFilterBulan'])->name('aksi-filter-bulan');
+            Route::get('/perbulan/{bulan}/print', [RekapController::class, 'printRekapPerbulan'])->name('print-perbulan');
+            Route::get('/permohonan/{bulan}/{jenisBarang}', [RekapController::class, 'rekapPermohonan'])->name('permohonan');
+            Route::post('/permohonan', [RekapController::class, 'aksiRekapPermohonan'])->name('aksi-permohonan');
+            Route::get('/permohonan/{bulan}/{jenisBarang}/print', [RekapController::class, 'printRekapPermohonan'])->name('print-permohonan');
+        });
+
+        Route::prefix('sdia')->name('sdia.')->group(function () {
+            Route::get('/kegiatan', [SdiaController::class, 'kegiatan'])->name('kegiatan');
+            Route::get('/kegiatan/tambah', [SdiaController::class, 'tambahKegiatan'])->name('tambah-kegiatan');
+            Route::post('/kegiatan', [SdiaController::class, 'storeKegiatan'])->name('store-kegiatan');
+            Route::get('/kegiatan/{id}/ubah', [SdiaController::class, 'ubahKegiatan'])->name('ubah-kegiatan');
+            Route::put('/kegiatan/{id}', [SdiaController::class, 'updateKegiatan'])->name('update-kegiatan');
+
+            Route::get('/klasifikasi', [SdiaController::class, 'klasifikasi'])->name('klasifikasi');
+
+            Route::get('/anggaran', [SdiaController::class, 'anggaran'])->name('anggaran');
+            Route::get('/anggaran/tambah', [SdiaController::class, 'tambahAnggaran'])->name('tambah-anggaran');
+            Route::post('/anggaran', [SdiaController::class, 'storeAnggaran'])->name('store-anggaran');
+            Route::get('/anggaran/{id}/ubah', [SdiaController::class, 'ubahAnggaran'])->name('ubah-anggaran');
+            Route::put('/anggaran/{id}', [SdiaController::class, 'updateAnggaran'])->name('update-anggaran');
+            Route::delete('/anggaran/{id}', [SdiaController::class, 'deleteAnggaran'])->name('delete-anggaran');
+
+            Route::get('/dpa', [SdiaController::class, 'dpa'])->name('dpa');
+            Route::get('/dpa/tambah', [SdiaController::class, 'tambahDpa'])->name('tambah-dpa');
+            Route::post('/dpa', [SdiaController::class, 'storeDpa'])->name('store-dpa');
+            Route::get('/dpa/{id}/ubah', [SdiaController::class, 'ubahDpa'])->name('ubah-dpa');
+            Route::put('/dpa/{id}', [SdiaController::class, 'updateDpa'])->name('update-dpa');
+            Route::delete('/dpa/{id}', [SdiaController::class, 'deleteDpa'])->name('delete-dpa');
+
+            Route::get('/transaksi', [SdiaController::class, 'transaksi'])->name('transaksi');
+            Route::get('/transaksi/tambah', [SdiaController::class, 'tambahTransaksi'])->name('tambah-transaksi');
+            Route::post('/transaksi', [SdiaController::class, 'storeTransaksi'])->name('store-transaksi');
+            Route::get('/transaksi/{id}/ubah', [SdiaController::class, 'ubahTransaksi'])->name('ubah-transaksi');
+            Route::put('/transaksi/{id}', [SdiaController::class, 'updateTransaksi'])->name('update-transaksi');
+
+            Route::get('/bulanan', [SdiaController::class, 'bulanan'])->name('bulanan');
+            Route::get('/bulanan/clear', [SdiaController::class, 'clearFilter'])->name('clear-filter');
+            Route::post('/bulanan/hitung-ulang', [SdiaController::class, 'hitungUlang'])->name('hitung-ulang');
+
+            Route::match(['get', 'post'], '/saldo-awal', [SdiaController::class, 'saldoAwal'])->name('saldo-awal');
+        });
+
+        Route::prefix('user')->name('user.')->group(function () {
+            Route::get('/', [BangkitUserController::class, 'daftar'])->name('daftar');
+            Route::post('/{id}/toggle', [BangkitUserController::class, 'toggle'])->name('toggle');
+            Route::get('/{id}/ubah', [BangkitUserController::class, 'ubah'])->name('ubah');
+            Route::put('/{id}', [BangkitUserController::class, 'update'])->name('update');
+        });
     });
 });
 

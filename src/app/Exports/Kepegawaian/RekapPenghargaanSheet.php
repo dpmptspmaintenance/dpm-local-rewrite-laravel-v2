@@ -2,6 +2,7 @@
 
 namespace App\Exports\Kepegawaian;
 
+use App\Models\Kepegawaian\DrhSatyaLancana;
 use App\Models\Kepegawaian\PegawaiProfil;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\Export;
@@ -28,12 +29,16 @@ class RekapPenghargaanSheet implements Export, FromCollection, ShouldAutoSize, W
     /** Baris yang perlu highlight kuning (perlu_diusulkan tak null) — direset tiap collection(). */
     private array $barisPerluDiusulkan = [];
 
+    /** Baris yang BELUM bisa diajukan (perlu_diusulkan tak null tapi status sukses). */
+    private array $barisTidakBisaDiusulkan = [];
+
     private int $nomor = 0;
 
     public function collection(): Collection
     {
         $this->nomor = 0;
         $this->barisPerluDiusulkan = [];
+        $this->barisTidakBisaDiusulkan = [];
 
         return PegawaiProfil::rekapPenghargaan();
     }
@@ -47,7 +52,8 @@ class RekapPenghargaanSheet implements Export, FromCollection, ShouldAutoSize, W
     {
         return [
             'No', 'NIP', 'Nama Pegawai', 'Jabatan', 'Golongan', 'Masa Kerja (Tahun)',
-            '10 Tahun', '20 Tahun', '30 Tahun', 'Perlu Diusulkan',
+            'Masa Kerja DUK', '10 Tahun', '20 Tahun', '30 Tahun', 'Perlu Diusulkan',
+            'Pengusulan Terakhir', 'Bisa Diusulkan',
         ];
     }
 
@@ -57,7 +63,13 @@ class RekapPenghargaanSheet implements Export, FromCollection, ShouldAutoSize, W
 
         if ($row['perlu_diusulkan'] !== null) {
             $this->barisPerluDiusulkan[] = $nomor;
+
+            if (! $row['bisa_diusulkan']) {
+                $this->barisTidakBisaDiusulkan[] = $nomor;
+            }
         }
+
+        $status = $row['drh_terakhir_status'];
 
         return [
             $nomor,
@@ -66,10 +78,15 @@ class RekapPenghargaanSheet implements Export, FromCollection, ShouldAutoSize, W
             $row['jabatan'] ?: '—',
             $row['golongan'] ?: '—',
             $row['masa_kerja'],
+            $row['masa_kerja_duk'] ?: '—',
             $row['has_10'] ? 'V' : '',
             $row['has_20'] ? 'V' : '',
             $row['has_30'] ? 'V' : '',
             $row['perlu_diusulkan'] !== null ? $row['perlu_diusulkan'].' Tahun' : '—',
+            $status === null
+                ? ''
+                : ($row['drh_terakhir_tahun'] ?? '?').' — '.(DrhSatyaLancana::STATUSES[$status] ?? $status),
+            $row['alasan_bisa_diusulkan'],
         ];
     }
 
@@ -115,15 +132,21 @@ class RekapPenghargaanSheet implements Export, FromCollection, ShouldAutoSize, W
                     ->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
                 $sheet->getStyle('A3:'.$lastColumn.'3')->getFont()->setBold(true);
 
-                foreach (['G', 'H', 'I'] as $col) {
+                foreach (['G', 'H', 'I', 'J', 'K', 'L', 'M'] as $col) {
                     $sheet->getStyle($col.'4:'.$col.$lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 }
-                $sheet->getStyle('J4:J'.$lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
                 foreach ($this->barisPerluDiusulkan as $nomor) {
                     $baris = $nomor + 3;
                     $sheet->getStyle('A'.$baris.':'.$lastColumn.$baris)
                         ->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFF3CD');
+                }
+
+                // Baris yang perlu diusulkan TAPI belum bisa (DRH terakhir
+                // sukses) — sel "Bisa Diusulkan" (M) disorot merah tegas.
+                foreach ($this->barisTidakBisaDiusulkan as $nomor) {
+                    $baris = $nomor + 3;
+                    $sheet->getStyle('M'.$baris)->getFont()->setBold(true)->getColor()->setRGB('C00000');
                 }
             },
         ];

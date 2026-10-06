@@ -92,6 +92,26 @@ class PegawaiProfil extends Model
         return $this->hasMany(PegawaiArsip::class, 'nip', 'nip');
     }
 
+    public function drhSatyaLancana(): HasMany
+    {
+        return $this->hasMany(DrhSatyaLancana::class, 'nip', 'nip');
+    }
+
+    public function riwayatCpns(): HasOne
+    {
+        return $this->hasOne(PegawaiRiwayatCpns::class, 'nip', 'nip');
+    }
+
+    public function riwayatJabatan(): HasMany
+    {
+        return $this->hasMany(PegawaiRiwayatJabatan::class, 'nip', 'nip')->orderBy('no_urut');
+    }
+
+    public function riwayatPangkat(): HasMany
+    {
+        return $this->hasMany(PegawaiRiwayatPangkat::class, 'nip', 'nip')->orderBy('no_urut');
+    }
+
     /**
      * Set pencocokan NIP pengguna aktif (users.is_aktif = 1), di-cache per
      * request. Kolom is_aktif hanya ada di data_local.users, bukan di sini,
@@ -249,6 +269,14 @@ class PegawaiProfil extends Model
     }
 
     /**
+     * Jendela "pengusulan terakhir" — berapa tahun ke belakang DRH Satya
+     * Lancana dianggap relevan saat menampilkan riwayat pengusulan terakhir.
+     * (Dipakai murni untuk info; keputusan boleh-tidak-nya tetap dari
+     * status DRH terbaru + tingkat yang perlu diusulkan.)
+     */
+    public const JENDELA_PENGUSULAN_TAHUN = 3;
+
+    /**
      * Rekap penghargaan masa kerja berbentuk checklist per tingkat SLKS
      * (10/20/30 tahun), plus tingkat mana yang WAJIB diusulkan berikutnya
      * sesuai syarat: "PNS yang belum pernah menerima SLKS hanya dapat
@@ -275,7 +303,7 @@ class PegawaiProfil extends Model
      * adanya (bukan hasil asumsi) — cascade di atas cuma dipakai untuk
      * menentukan perlu_diusulkan, supaya data mentah tak disamarkan.
      *
-     * @return Collection<int, array{nip: string, nama: string, jabatan: ?string, golongan: ?string, masa_kerja: int, has_10: bool, has_20: bool, has_30: bool, perlu_diusulkan: ?int, jumlah_penghargaan: int}>
+     * @return Collection<int, array{nip: string, nama: string, jabatan: ?string, golongan: ?string, masa_kerja: int, masa_kerja_duk: ?string, has_10: bool, has_20: bool, has_30: bool, perlu_diusulkan: ?int, jumlah_penghargaan: int, drh_terakhir_status: ?string, drh_terakhir_tahun: ?int, drh_dalam_3_tahun: bool, bisa_diusulkan: bool, alasan_bisa_diusulkan: string}>
      */
     public static function rekapPenghargaan(): Collection
     {
@@ -306,6 +334,28 @@ class PegawaiProfil extends Model
 
         $jumlahByNip = $semuaByNip->map(fn (Collection $rows): int => $rows->count());
 
+        // DRH Satya Lancana terbaru per pegawai (status draft/diusulkan/
+        // ditolak/sukses) — untuk kolom "Pengusulan Terakhir" & keputusan
+        // "bisa diajukan kembali". Ambil baris paling baru (created_at desc).
+        $drhByNip = DrhSatyaLancana::query()
+            ->whereIn('nip', $nipList)
+            ->orderByDesc('created_at')
+            ->get(['nip', 'status', 'created_at'])
+            ->groupBy('nip')
+            ->map(fn (Collection $rows) => $rows->first());
+
+        // Masa kerja dari DUK terakhir (perhitungan resmi kepegawaian, bukan
+        // turunan NIP) — satu baris per NIP dari batch DUK TERBARU. Dipakai
+        // kolom "Masa Kerja DUK" sebagai pembanding kolom "Masa Kerja" (NIP).
+        $dukBatchId = DukImpor::query()->orderByDesc('diimpor_pada')->orderByDesc('id')->value('id');
+        $dukByNip = Duk::query()
+            ->where('duk_impor_id', $dukBatchId ?? 0)
+            ->whereIn('nip', $nipList)
+            ->orderBy('urutan_duk')
+            ->get(['nip', 'masa_kerja_tahun', 'masa_kerja_bulan'])
+            ->groupBy('nip')
+            ->map(fn (Collection $rows) => $rows->first());
+
         // Tingkat yang sudah pernah dimiliki per pegawai — union impor +
         // manual, sumbernya tak dibedakan di sini (keduanya sama sah).
         // tier() baca jenis_penghargaan DAN nama_penghargaan (fallback) —
@@ -319,7 +369,7 @@ class PegawaiProfil extends Model
                 ->values()
                 ->all());
 
-        return $nipList->map(function (string $nip) use ($profil, $tierByNip, $jumlahByNip) {
+        return $nipList->map(function (string $nip) use ($profil, $tierByNip, $jumlahByNip, $drhByNip, $dukByNip) {
             $masa = self::masaKerjaTahun($nip);
 
             if ($masa === null || $masa < 10) {
@@ -356,17 +406,55 @@ class PegawaiProfil extends Model
                 }
             }
 
+            // DRH Satya Lancana terbaru untuk pegawai ini (bila ada).
+            $drh = $drhByNip->get($nip);
+            $drhTahun = $drh?->created_at?->year;
+            $drhDalamJendela = $drhTahun !== null
+                && $drhTahun >= ((int) now()->year - self::JENDELA_PENGUSULAN_TAHUN);
+
+            // Masa kerja DUK terakhir (dari dokumen) — teks "28 tahun 12 bulan".
+            $duk = $dukByNip->get($nip);
+            $dukTeks = $duk
+                ? (($duk->masa_kerja_tahun ?? 0).' tahun '.($duk->masa_kerja_bulan ?? 0).' bulan')
+                : null;
+
+            // Boleh diajukan lagi?
+            //  - Tak ada tingkat yang perlu diusulkan → selesai.
+            //  - DRH terbaru berstatus "sukses" → tingkat itu sudah diproses
+            //    (blokir cuma untuk tingkat yang sama; begitu SK-nya tercatat
+            //    di pegawai_penghargaan, perlu_diusulkan otomatis naik ke
+            //    tingkat berikutnya dan baris ini jadi bisa diajukan lagi).
+            //  - Non-sukses (draft/diusulkan/ditolak) → BEBAS ajukan ulang
+            //    (mis. 2024 diusulkan belum sukses, 2026 boleh ajukan lagi).
+            $bisaDiusulkan = false;
+            $alasanBisaDiusulkan = 'Lengkap';
+
+            if ($perluDiusulkan !== null) {
+                if ($drh && $drh->status === DrhSatyaLancana::STATUS_SUKSES) {
+                    $alasanBisaDiusulkan = 'Sudah sukses ('.$drhTahun.')';
+                } else {
+                    $bisaDiusulkan = true;
+                    $alasanBisaDiusulkan = 'Bisa diajukan';
+                }
+            }
+
             return [
                 'nip' => $nip,
                 'nama' => $p?->nama ?? $nip,
                 'jabatan' => $p?->jabatan,
                 'golongan' => $p?->golongan,
                 'masa_kerja' => $masa,
+                'masa_kerja_duk' => $dukTeks,
                 'has_10' => $has10,
                 'has_20' => $has20,
                 'has_30' => $has30,
                 'perlu_diusulkan' => $perluDiusulkan,
                 'jumlah_penghargaan' => $jumlahByNip->get($nip, 0),
+                'drh_terakhir_status' => $drh?->status,
+                'drh_terakhir_tahun' => $drhTahun,
+                'drh_dalam_3_tahun' => $drhDalamJendela,
+                'bisa_diusulkan' => $bisaDiusulkan,
+                'alasan_bisa_diusulkan' => $alasanBisaDiusulkan,
             ];
         })
             ->filter()

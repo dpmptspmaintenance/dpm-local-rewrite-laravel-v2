@@ -20,8 +20,12 @@ RUN apt-get update && apt-get install -y \
 # actual layout on this app's Surat Tugas template — tables, spacing, line
 # breaks all rendered differently). fontconfig + the DejaVu/Liberation fonts
 # are pulled in automatically as dependencies of libreoffice-writer.
+# poppler-utils provides pdftotext (-bbox mode) used by DukImportService to
+# extract the DAFTAR URUT KEPANGKATAN table from an uploaded PDF by column
+# X-coordinates.
 RUN apt-get update && apt-get install -y \
     libreoffice-writer \
+    poppler-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Composer

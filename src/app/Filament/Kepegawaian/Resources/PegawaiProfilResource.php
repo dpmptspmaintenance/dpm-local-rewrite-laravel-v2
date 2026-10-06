@@ -200,6 +200,9 @@ class PegawaiProfilResource extends Resource
             PegawaiProfilResource\RelationManagers\AnakRelationManager::class,
             PegawaiProfilResource\RelationManagers\KompetensiRelationManager::class,
             PegawaiProfilResource\RelationManagers\PenghargaanRelationManager::class,
+            PegawaiProfilResource\RelationManagers\RiwayatCpnsRelationManager::class,
+            PegawaiProfilResource\RelationManagers\RiwayatJabatanRelationManager::class,
+            PegawaiProfilResource\RelationManagers\RiwayatPangkatRelationManager::class,
             PegawaiProfilResource\RelationManagers\ArsipRelationManager::class,
         ];
     }
