@@ -7,6 +7,7 @@ use App\Models\Kepegawaian\Notulen;
 use App\Models\User;
 use App\Services\Kepegawaian\NotulenGeneratorService;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -21,8 +22,8 @@ class NotulenTest extends TestCase
             'database.default' => 'mysql',
             'database.connections.mysql.database' => 'dpmptsp_new',
         ]);
-        \Illuminate\Support\Facades\DB::purge('mysql');
-        \Illuminate\Support\Facades\DB::purge('kepegawaian');
+        DB::purge('mysql');
+        DB::purge('kepegawaian');
         Filament::setCurrentPanel('kepegawaian');
     }
 
@@ -117,7 +118,7 @@ class NotulenTest extends TestCase
         $this->assertFileExists($docxPath);
         $this->assertGreaterThan(1000, filesize($docxPath));
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $this->assertTrue($zip->open($docxPath));
         $docXml = $zip->getFromName('word/document.xml');
         $zip->close();
@@ -132,12 +133,19 @@ class NotulenTest extends TestCase
         $this->assertStringContainsString('Dinas Kominfo', $docXml);
         $this->assertStringContainsString('Paragraf pertama hasil pembahasan teknis dengan', $docXml);
         $this->assertStringContainsString('teks tebal', $docXml);
+
+        // Paragraf child di bawah heading Hasil Acara diberi indent 1 tab (w:left="720")
+        $this->assertMatchesRegularExpression(
+            '/<w:pPr><w:spacing w:line="360" w:lineRule="auto"\/><w:jc w:val="both"\/><w:ind w:left="720"\/><\/w:pPr>.*?Paragraf pertama hasil pembahasan teknis/s',
+            $docXml
+        );
         $this->assertStringContainsString('1. Dasar', $docXml);
         $this->assertStringContainsString('2. Waktu dan Tempat Pelaksanaan', $docXml);
         $this->assertStringContainsString('3. Narasumber :', $docXml);
         $this->assertStringContainsString('4. Peserta :', $docXml);
         $this->assertStringContainsString('5. Hasil Acara :', $docXml);
-        $this->assertStringContainsString('6. Demikian Notulen ini dibuat untuk menjadikan periksa.', $docXml);
+        $this->assertStringContainsString('Demikian Notulen ini dibuat untuk menjadikan periksa.', $docXml);
+        $this->assertStringNotContainsString('6. Demikian Notulen', $docXml);
         $this->assertStringContainsString('Semarang, 15 Oktober 2026', $docXml);
         $this->assertStringContainsString('Kepala Bidang DPMPTSP Kota Semarang', $docXml);
         $this->assertStringContainsString('Nama Penguji, S.T.', $docXml);
@@ -181,7 +189,7 @@ class NotulenTest extends TestCase
         $service = app(NotulenGeneratorService::class);
         $docxPath = $service->generateDocx($record);
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $this->assertTrue($zip->open($docxPath));
         $docXml = $zip->getFromName('word/document.xml');
         $zip->close();
@@ -191,8 +199,8 @@ class NotulenTest extends TestCase
         $this->assertStringContainsString('RAPAT KOORDINASI TANPA NARASUMBER DAN PESERTA', $docXml);
         $this->assertStringContainsString('1. Waktu dan Tempat Pelaksanaan', $docXml);
         $this->assertStringContainsString('2. Hasil Acara :', $docXml);
-        $this->assertStringContainsString('3. Demikian Notulen ini dibuat.', $docXml);
-
+        $this->assertStringContainsString('Demikian Notulen ini dibuat.', $docXml);
+        $this->assertStringNotContainsString('3. Demikian Notulen', $docXml);
         // Pastikan heading Dasar, Narasumber, dan Peserta ditiadakan secara bersih
         $this->assertStringNotContainsString('Dasar', $docXml);
         $this->assertStringNotContainsString('Narasumber', $docXml);
@@ -208,5 +216,109 @@ class NotulenTest extends TestCase
         $this->assertGreaterThan(1000, filesize($pdfPath));
         @unlink($pdfPath);
     }
-}
 
+    public function test_notulen_nested_lists_are_progressively_indented(): void
+    {
+        $admin = User::query()->where('role', 1)->firstOrFail();
+
+        $record = Notulen::create([
+            'judul' => 'RAPAT DENGAN NESTED LIST',
+            'hari_tanggal' => 'Sabtu, 17 Oktober 2026',
+            'waktu' => '08.00 WIB – Selesai',
+            'tempat' => 'Ruang Rapat DPMPTSP',
+            'dasar' => null,
+            'narasumber' => null,
+            'peserta_deskripsi' => null,
+            'peserta_daftar' => null,
+            'hasil_acara' => '<ol><li><p>Induk pertama</p><ul><li><p>Sub bullet satu</p></li><li><p>Sub bullet dua</p></li></ul></li><li><p>Induk kedua</p><ol><li><p>Sub angka satu</p></li></ol></li></ol>',
+            'penutup' => 'Demikian Notulen ini dibuat.',
+            'tanggal_naskah' => 'Semarang, 17 Oktober 2026',
+            'atasan_user_id' => $admin->id,
+            'atasan_nama' => $admin->nama ?: $admin->name,
+            'atasan_nip' => $admin->nip ?: '198001012005011001',
+            'atasan_jabatan' => 'Kepala Bidang DPMPTSP',
+            'pelapor_user_id' => $admin->id,
+            'pelapor_nama' => 'Nama Penguji, S.T.',
+            'pelapor_nip' => '198501012010011002',
+            'pelapor_jabatan' => 'Penyusun Laporan',
+            'dibuat_oleh' => $admin->id,
+            'dibuat_oleh_nama' => $admin->nama ?: $admin->name,
+        ]);
+        $this->notulenId = $record->id;
+
+        $service = app(NotulenGeneratorService::class);
+        $docxPath = $service->generateDocx($record);
+
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($docxPath));
+        $docXml = $zip->getFromName('word/document.xml');
+        $zip->close();
+        @unlink($docxPath);
+
+        // Item induk level 0 => indent 720
+        $this->assertMatchesRegularExpression(
+            '/<w:ind w:left="720" w:hanging="360"\/>.*?1\. Induk pertama/s',
+            $docXml
+        );
+
+        // Sub bullet level 1 => indent 1080 (tidak rata dengan induknya)
+        $this->assertMatchesRegularExpression(
+            '/<w:ind w:left="1080" w:hanging="360"\/>.*?◦ Sub bullet satu/s',
+            $docXml
+        );
+
+        // Sub angka level 1 => indent 1080
+        $this->assertMatchesRegularExpression(
+            '/<w:ind w:left="1080" w:hanging="360"\/>.*?a\. Sub angka satu/s',
+            $docXml
+        );
+    }
+
+    public function test_notulen_strips_trailing_empty_paragraph_from_hasil_acara(): void
+    {
+        $admin = User::query()->where('role', 1)->firstOrFail();
+
+        $record = Notulen::create([
+            'judul' => 'RAPAT TANPA PARAGRAF KOSONG',
+            'hari_tanggal' => 'Minggu, 18 Oktober 2026',
+            'waktu' => '08.00 WIB – Selesai',
+            'tempat' => 'Ruang Rapat DPMPTSP',
+            'dasar' => null,
+            'narasumber' => null,
+            'peserta_deskripsi' => null,
+            'peserta_daftar' => null,
+            'hasil_acara' => '<ol><li><p>Poin terakhir</p></li></ol><p></p><p><br></p>',
+            'penutup' => 'Demikian Notulen ini dibuat.',
+            'tanggal_naskah' => 'Semarang, 18 Oktober 2026',
+            'atasan_user_id' => $admin->id,
+            'atasan_nama' => $admin->nama ?: $admin->name,
+            'atasan_nip' => $admin->nip ?: '198001012005011001',
+            'atasan_jabatan' => 'Kepala Bidang DPMPTSP',
+            'pelapor_user_id' => $admin->id,
+            'pelapor_nama' => 'Nama Penguji, S.T.',
+            'pelapor_nip' => '198501012010011002',
+            'pelapor_jabatan' => 'Penyusun Laporan',
+            'dibuat_oleh' => $admin->id,
+            'dibuat_oleh_nama' => $admin->nama ?: $admin->name,
+        ]);
+        $this->notulenId = $record->id;
+
+        $service = app(NotulenGeneratorService::class);
+        $docxPath = $service->generateDocx($record);
+
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($docxPath));
+        $docXml = $zip->getFromName('word/document.xml');
+        $zip->close();
+        @unlink($docxPath);
+
+        // Isi tetap ada
+        $this->assertStringContainsString('1. Poin terakhir', $docXml);
+
+        // Tidak ada paragraf kosong ber-indent (sisa paragraf kosong RichEditor) setelah item terakhir
+        $this->assertDoesNotMatchRegularExpression(
+            '/1\. Poin terakhir.*?<\/w:p>\s*<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"\/><w:jc w:val="both"\/><w:ind w:left="720"\/><\/w:pPr><\/w:p>/s',
+            $docXml
+        );
+    }
+}

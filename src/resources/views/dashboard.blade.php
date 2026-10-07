@@ -65,6 +65,7 @@
         </div>
 
         <div class="row g-4 mb-5">
+            {{-- Modul disembunyikan sementara (kode tetap, tidak dihapus)
             <div class="col-12 col-sm-6 col-lg-4">
                 <a href="{{ url('/rapatkita') }}" class="text-decoration-none text-dark">
                     <div class="card menu-card shadow-sm text-center py-5">
@@ -160,6 +161,7 @@
                     </div>
                 </a>
             </div>
+            --}}
 
             @if (Auth::user()->role == 1)
                 <div class="col-12 col-sm-6 col-lg-4">

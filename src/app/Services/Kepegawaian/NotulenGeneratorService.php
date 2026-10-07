@@ -3,9 +3,15 @@
 namespace App\Services\Kepegawaian;
 
 use App\Models\Kepegawaian\Notulen;
+use Illuminate\Support\Carbon;
 use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Settings;
+use PhpOffice\PhpWord\Shared\Html;
+use PhpOffice\PhpWord\Shared\XMLWriter;
 use PhpOffice\PhpWord\TemplateProcessor;
+use PhpOffice\PhpWord\Writer\Word2007\Element\Container;
+use Symfony\Component\Process\Process;
 
 /**
  * Service untuk mengisi template Word Notulen
@@ -75,8 +81,8 @@ class NotulenGeneratorService
             $formattedDasar = [];
             foreach ($dasarLines as $i => $line) {
                 if ($multiple && ! preg_match('/^[a-z0-9][\.\)]\s/i', $line)) {
-                    $prefix = chr(97 + ($i % 26)) . '. ';
-                    $formattedDasar[] = $prefix . $line;
+                    $prefix = chr(97 + ($i % 26)).'. ';
+                    $formattedDasar[] = $prefix.$line;
                 } else {
                     $formattedDasar[] = $line;
                 }
@@ -113,8 +119,8 @@ class NotulenGeneratorService
             $formattedNara = [];
             foreach ($narasumberLines as $i => $line) {
                 if (! preg_match('/^\d+[\.\)]\s/', $line)) {
-                    $prefix = ($i + 1) . '. ';
-                    $formattedNara[] = $prefix . $line;
+                    $prefix = ($i + 1).'. ';
+                    $formattedNara[] = $prefix.$line;
                 } else {
                     $formattedNara[] = $line;
                 }
@@ -157,8 +163,8 @@ class NotulenGeneratorService
                 $formattedPeserta = [];
                 foreach ($pesertaLines as $i => $line) {
                     if (! preg_match('/^\d+[\.\)]\s/', $line) && ! preg_match('/^[a-z][\.\)]\s/i', $line)) {
-                        $prefix = ($i + 1) . '. ';
-                        $formattedPeserta[] = $prefix . $line;
+                        $prefix = ($i + 1).'. ';
+                        $formattedPeserta[] = $prefix.$line;
                     } else {
                         $formattedPeserta[] = $line;
                     }
@@ -175,23 +181,19 @@ class NotulenGeneratorService
 
         // Hasil Acara (mendukung format WYSIWYG / HTML dan teks polos)
         $tp->setValue('hasil_hdr', $this->xmlEscape("{$secNo}. Hasil Acara :"));
-        $secNo++;
         $this->injectHasilAcara($tp, (string) $notulen->hasil_acara);
 
-        // Penutup
+        // Penutup (tanpa penomoran list)
         $penutup = filled($notulen->penutup)
             ? (string) $notulen->penutup
             : "Demikian Notulen {$notulen->judul} untuk menjadikan periksa.";
 
-        if (! preg_match('/^\d+[\.\)]\s/', $penutup)) {
-            $penutup = "{$secNo}. {$penutup}";
-        }
         $tp->setValue('penutup', $this->xmlEscape($penutup));
 
         // Tanggal Naskah
         $tanggalNaskah = filled($notulen->tanggal_naskah)
             ? (string) $notulen->tanggal_naskah
-            : 'Semarang, '.\Illuminate\Support\Carbon::now()->locale('id')->translatedFormat('j F Y');
+            : 'Semarang, '.Carbon::now()->locale('id')->translatedFormat('j F Y');
         $tp->setValue('tanggal_naskah', $this->xmlEscape($tanggalNaskah));
 
         // Penandatangan Atasan (Mengetahui)
@@ -216,10 +218,40 @@ class NotulenGeneratorService
         $tp->setValue('pelapor_nama', $this->xmlEscape($pelaporNama));
         $tp->setValue('pelapor_nip', $this->xmlEscape($pelaporNip));
 
+        $this->collapseEmptyParagraphs($tp);
+
         $tmp = tempnam($this->tempDir(), 'notulen_').'.docx';
         $tp->saveAs($tmp);
 
         return $tmp;
+    }
+
+    /**
+     * Meredam paragraf kosong yang menumpuk (mis. sisa spacer dari section
+     * Dasar/Narasumber/Peserta yang dikosongkan) agar jarak antar bagian naskah
+     * tidak melebar. Hanya paragraf kosong BERURUTAN yang diringkas menjadi satu,
+     * sehingga spacer tunggal (termasuk di dalam sel tabel tanda tangan) tetap utuh.
+     */
+    private function collapseEmptyParagraphs(TemplateProcessor $tp): void
+    {
+        $ref = new \ReflectionProperty(TemplateProcessor::class, 'tempDocumentMainPart');
+        $ref->setAccessible(true);
+        $mainPart = (string) $ref->getValue($tp);
+
+        $emptyPara = '<w:p(?: [^>]*)?><w:pPr>(?:(?!</w:pPr>).)*?</w:pPr></w:p>';
+
+        // Ulangi sampai tidak ada lagi dua paragraf kosong berdampingan.
+        $previous = null;
+        while ($previous !== $mainPart) {
+            $previous = $mainPart;
+            $mainPart = preg_replace(
+                '~('.$emptyPara.')\s*(?='.$emptyPara.')~s',
+                '',
+                $mainPart
+            );
+        }
+
+        $ref->setValue($tp, $mainPart);
     }
 
     /**
@@ -250,7 +282,7 @@ class NotulenGeneratorService
         mkdir($profileDir, 0775, true);
 
         try {
-            $process = new \Symfony\Component\Process\Process([
+            $process = new Process([
                 'soffice',
                 '--headless',
                 '--norestore',
@@ -278,7 +310,7 @@ class NotulenGeneratorService
 
             return $pdfPath;
         } finally {
-            (new \Symfony\Component\Process\Process(['rm', '-rf', $outDir, $profileDir]))->run();
+            (new Process(['rm', '-rf', $outDir, $profileDir]))->run();
         }
     }
 
@@ -315,6 +347,10 @@ class NotulenGeneratorService
             $raw = $paragraphs ?: '<p>-</p>';
         }
 
+        // RichEditor kerap menyisakan paragraf kosong di akhir (mis. "...</ol><p></p>")
+        // sehingga menambah satu baris kosong berlebih di bawah isi Hasil Acara.
+        $raw = $this->stripTrailingEmptyBlocks($raw);
+
         // Normalisasi list HTML agar numbered list 1, 2, 3... dan unordered list terformat pasti
         $raw = $this->normalizeHtmlLists($raw);
 
@@ -335,6 +371,22 @@ class NotulenGeneratorService
     }
 
     /**
+     * Membuang blok/paragraf kosong di akhir konten (mis. "<p></p>", "<p><br></p>",
+     * atau "<div></div>") yang tidak membawa isi apa pun.
+     */
+    private function stripTrailingEmptyBlocks(string $html): string
+    {
+        $emptyBlock = '<(p|div)\b[^>]*>(?:\s|&nbsp;|<br\s*/?>|<\/?span[^>]*>)*<\/\1>';
+
+        do {
+            $previous = $html;
+            $html = preg_replace('~\s*'.$emptyBlock.'\s*$~i', '', $html);
+        } while ($html !== $previous);
+
+        return trim($html);
+    }
+
+    /**
      * Menormalisasi tag <ol> dan <ul> dari WYSIWYG RichEditor menjadi paragraf
      * bernomor eksplisit (1. 2. 3. dst) dan berpeluru (• dst) sehingga tidak
      * terdistorsi oleh mapping numId pada word/numbering.xml.
@@ -345,7 +397,7 @@ class NotulenGeneratorService
             return $html;
         }
 
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         libxml_use_internal_errors(true);
         $dom->loadHTML('<?xml encoding="utf-8" ?><div>'.$html.'</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
         libxml_clear_errors();
@@ -379,22 +431,25 @@ class NotulenGeneratorService
                     }
 
                     if ($isOrdered) {
-                        $prefix = match ($level % 3) {
+                        $prefix = match ($level % 4) {
                             0 => "{$index}. ",
                             1 => chr(96 + (($index - 1) % 26 + 1)).'. ',
-                            default => "{$index}) ",
+                            2 => "{$index}) ",
+                            default => chr(96 + (($index - 1) % 26 + 1)).') ',
                         };
                         $index++;
                     } else {
-                        $prefix = match ($level % 2) {
+                        $prefix = match ($level % 4) {
                             0 => '• ',
-                            default => '- ',
+                            1 => '◦ ',
+                            2 => '▪ ',
+                            default => '‣ ',
                         };
                     }
 
                     $pNode = $dom->createElement('p');
 
-                    $subDoc = new \DOMDocument();
+                    $subDoc = new \DOMDocument;
                     libxml_use_internal_errors(true);
                     $subDoc->loadHTML('<?xml encoding="utf-8" ?><div>'.htmlspecialchars($prefix, ENT_QUOTES | ENT_XML1, 'UTF-8').$liContent.'</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
                     libxml_clear_errors();
@@ -433,16 +488,60 @@ class NotulenGeneratorService
         return $out;
     }
 
+    /**
+     * Menentukan kedalaman (level) item list dari prefix teks yang dihasilkan
+     * normalizeHtmlLists(). Mengembalikan null bila baris bukan item list.
+     *
+     * Ordered (level % 4): 0 => "1. ", 1 => "a. ", 2 => "1) ", 3 => "a) "
+     * Unordered (level % 4): 0 => "• ", 1 => "◦ ", 2 => "▪ ", 3 => "‣ "
+     */
+    private function detectListLevel(string $plain): ?int
+    {
+        if (preg_match('/^\d+\.\s/', $plain)) {
+            return 0;
+        }
+
+        if (preg_match('/^[a-z]\.\s/i', $plain)) {
+            return 1;
+        }
+
+        if (preg_match('/^\d+\)\s/', $plain)) {
+            return 2;
+        }
+
+        if (preg_match('/^[a-z]\)\s/i', $plain)) {
+            return 3;
+        }
+
+        if (preg_match('/^•\s/u', $plain)) {
+            return 0;
+        }
+
+        if (preg_match('/^◦\s/u', $plain)) {
+            return 1;
+        }
+
+        if (preg_match('/^▪\s/u', $plain)) {
+            return 2;
+        }
+
+        if (preg_match('/^‣\s/u', $plain)) {
+            return 3;
+        }
+
+        return null;
+    }
+
     private function htmlToOpenXml(string $html): string
     {
-        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $phpWord = new PhpWord;
         $phpWord->setDefaultFontName('Arial');
         $phpWord->setDefaultFontSize(11);
         $section = $phpWord->addSection();
-        \PhpOffice\PhpWord\Shared\Html::addHtml($section, $html);
+        Html::addHtml($section, $html);
 
-        $xmlWriter = new \PhpOffice\PhpWord\Shared\XMLWriter();
-        $writer = new \PhpOffice\PhpWord\Writer\Word2007\Element\Container($xmlWriter, $section);
+        $xmlWriter = new XMLWriter;
+        $writer = new Container($xmlWriter, $section);
         $writer->write();
         $xml = $xmlWriter->getData();
 
@@ -454,15 +553,22 @@ class NotulenGeneratorService
             $content = preg_replace('/<w:numPr>.*?<\/w:numPr>/s', '', $content);
 
             $plain = trim(strip_tags($content));
-            $isLvl0Numbered = (bool) preg_match('/^\d+[\.\)]\s/', $plain);
-            $isLvl1Numbered = (bool) preg_match('/^[a-z][\.\)]\s/i', $plain);
-            $isBullet = (bool) preg_match('/^[•\-\*]\s/', $plain);
 
-            $indentXml = '';
-            if ($isLvl0Numbered || $isBullet) {
-                $indentXml = '<w:ind w:left="720" w:hanging="360"/>';
-            } elseif ($isLvl1Numbered) {
-                $indentXml = '<w:ind w:left="1080" w:hanging="360"/>';
+            // Tentukan kedalaman item list dari pola prefix yang dihasilkan normalizeHtmlLists():
+            // ordered (level%4): 0:"N. " 1:"a. " 2:"N) " 3:"a) " ; unordered (level%4): 0:"• " 1:"◦ " 2:"▪ " 3:"‣ "
+            $level = $this->detectListLevel($plain);
+            $isListItem = $level !== null;
+            $isHeading = (bool) preg_match('/<w:pStyle w:val="Heading\d"/', $content);
+
+            if ($isListItem) {
+                $left = 720 + ($level * 360);
+                $indentXml = sprintf('<w:ind w:left="%d" w:hanging="360"/>', $left);
+            } elseif ($isHeading) {
+                // Sub-judul (h2/h3 dari WYSIWYG) tetap rata kiri, tanpa tab indent
+                $indentXml = '';
+            } else {
+                // Paragraf child (non-heading, non-list) di bawah heading Hasil Acara diberi 1 tab indent
+                $indentXml = '<w:ind w:left="720"/>';
             }
 
             if (preg_match('/<w:pPr\b[^>]*>(.*?)<\/w:pPr>/s', $content, $pm)) {
@@ -512,4 +618,3 @@ class NotulenGeneratorService
         return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
 }
-
