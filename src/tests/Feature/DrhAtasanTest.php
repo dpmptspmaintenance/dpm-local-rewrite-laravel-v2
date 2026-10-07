@@ -18,8 +18,10 @@ class DrhAtasanTest extends TestCase
         parent::setUp();
         config([
             'database.default' => 'mysql',
-            'database.connections.mysql.database' => env('DB_DATABASE', 'dpmptsp_new'),
+            'database.connections.mysql.database' => 'dpmptsp_new',
         ]);
+        \Illuminate\Support\Facades\DB::purge('mysql');
+        \Illuminate\Support\Facades\DB::purge('kepegawaian');
         Filament::setCurrentPanel('kepegawaian');
     }
 
