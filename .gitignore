@@ -1,5 +1,6 @@
 old/
 src/.env
+docker-compose.yml
 docker-compose.override.yml
 session-*.md
 contoh/

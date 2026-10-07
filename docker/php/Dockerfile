@@ -28,6 +28,10 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Upload limits for Arsip Digital — PHP's stock 2M upload / 8M post defaults
+# would reject the 50 MB files the app allows (ARSIP_MAX_UPLOAD_KB=51200).
+COPY uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+
 # Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
