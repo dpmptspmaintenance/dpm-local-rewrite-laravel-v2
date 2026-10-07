@@ -20,6 +20,10 @@ class CreateSuratTugas extends CreateRecord
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // Gabung waktu_mulai + waktu_selesai jadi teks `waktu` untuk template.
+        $data['waktu'] = SuratTugasResource::composeWaktu($data['waktu_mulai'] ?? null, $data['waktu_selesai'] ?? null);
+        unset($data['waktu_mulai'], $data['waktu_selesai']);
+
         $data['dasar_hukum_snapshot'] = SuratTugasDasarHukumSetting::query()
             ->orderBy('urutan')
             ->pluck('teks')

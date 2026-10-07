@@ -113,6 +113,25 @@ class PegawaiProfil extends Model
     }
 
     /**
+     * Baris DUK (Daftar Urut Kepangkatan) pegawai ini dari batch impor
+     * TERBARU — dipakai untuk menampilkan "DUK Terakhir" di detail pegawai.
+     * Null kalau pegawai tak ada di batch DUK terbaru.
+     */
+    public function dukTerakhir(): ?Duk
+    {
+        $batchId = DukImpor::query()->orderByDesc('diimpor_pada')->orderByDesc('id')->value('id');
+        if (! $batchId) {
+            return null;
+        }
+
+        return Duk::query()
+            ->where('duk_impor_id', $batchId)
+            ->where('nip', $this->nip)
+            ->orderBy('urutan_duk')
+            ->first();
+    }
+
+    /**
      * Set pencocokan NIP pengguna aktif (users.is_aktif = 1), di-cache per
      * request. Kolom is_aktif hanya ada di data_local.users, bukan di sini,
      * jadi keaktifan pegawai ditentukan lewat pencocokan NIP: cocok persis,

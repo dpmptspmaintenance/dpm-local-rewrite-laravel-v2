@@ -20,6 +20,7 @@ use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -86,11 +87,17 @@ class SuratTugasResource extends Resource
                         ->dehydrateStateUsing(fn (?string $state): ?string => $state === null
                             ? null
                             : \Illuminate\Support\Carbon::parse($state)->locale('id')->translatedFormat('l, j F Y')),
-                    TextInput::make('waktu')
-                        ->label('Waktu')
-                        ->helperText('Mis. "09.00 WIB s.d. selesai"')
+                    Select::make('waktu_mulai')
+                        ->label('Waktu Mulai')
                         ->required()
-                        ->maxLength(255),
+                        ->options(self::opsiJam())
+                        ->helperText('Jam mulai kegiatan (format 24 jam).'),
+                    Select::make('waktu_selesai')
+                        ->label('Waktu Selesai')
+                        ->required()
+                        ->default('selesai')
+                        ->options(fn (): array => ['selesai' => 'Selesai'] + self::opsiJam())
+                        ->helperText('Pilih "Selesai" atau jam berapa kegiatan berakhir.'),
                     TextInput::make('tempat')
                         ->label('Tempat')
                         ->required()
@@ -106,6 +113,13 @@ class SuratTugasResource extends Resource
                         ->native(false)
                         ->displayFormat('j F Y')
                         ->helperText('Disimpan sebagai "Semarang, 1 Oktober 2026" (format tempat terbit surat).')
+                        ->suffixAction(
+                            Action::make('clearTanggalNaskah')
+                                ->icon('heroicon-o-x-mark')
+                                ->color('gray')
+                                ->tooltip('Kosongkan tanggal naskah')
+                                ->action(fn (Set $set) => $set('tanggal_naskah', null))
+                        )
                         // Nilai tersimpan berupa teks "Semarang, j F Y" —
                         // konversi ke "Y-m-d" untuk ditampilkan dilakukan di
                         // EditSuratTugas::mutateFormDataBeforeFill() (lihat
@@ -291,5 +305,76 @@ class SuratTugasResource extends Resource
             'view' => Pages\ViewSuratTugas::route('/{record}'),
             'edit' => Pages\EditSuratTugas::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Opsi jam 24 jam "00.00".."23.00" untuk dropdown waktu.
+     *
+     * @return array<string, string>
+     */
+    public static function opsiJam(): array
+    {
+        $opsi = [];
+        for ($h = 0; $h <= 23; $h++) {
+            $jam = str_pad((string) $h, 2, '0', STR_PAD_LEFT);
+            $opsi[$jam.'.00'] = $jam.'.00';
+        }
+
+        return $opsi;
+    }
+
+    /**
+     * Gabung waktu_mulai + waktu_selesai jadi satu teks `waktu` untuk template:
+     *   mulai 09:00, selesai "selesai"  -> "09.00 WIB s.d. selesai"
+     *   mulai 09:00, selesai "12.00"    -> "09.00 WIB s.d. 12.00 WIB"
+     */
+    public static function composeWaktu(?string $mulai, ?string $selesai): ?string
+    {
+        if (blank($mulai)) {
+            return null;
+        }
+
+        $mulaiTeks = self::jamKeTitik($mulai);
+        if (blank($selesai) || $selesai === 'selesai') {
+            return "{$mulaiTeks} WIB s.d. selesai";
+        }
+
+        return "{$mulaiTeks} WIB s.d. ".self::jamKeTitik($selesai).' WIB';
+    }
+
+    /**
+     * Pecah teks `waktu` kembali jadi [mulai ('HH.MM'), selesai ('selesai'|'HH.MM')]
+     * untuk mengisi form edit. Format pakai titik supaya cocok dengan key opsi
+     * dropdown (opsiJam()). Toleran terhadap teks lama / format bebas.
+     *
+     * @return array{0: ?string, 1: string}
+     */
+    public static function parseWaktu(?string $waktu): array
+    {
+        $waktu = trim((string) $waktu);
+        if ($waktu === '') {
+            return [null, 'selesai'];
+        }
+
+        // Ambil jam pertama "09.00" / "09:00" -> mulai (normal ke titik).
+        preg_match('/(\d{1,2})[.:](\d{2})/', $waktu, $m);
+        $mulai = isset($m[1]) ? str_pad($m[1], 2, '0', STR_PAD_LEFT).'.'.$m[2] : null;
+
+        // Selesai: kalau ada kata "selesai" -> 'selesai', selain itu jam kedua.
+        if (stripos($waktu, 'selesai') !== false) {
+            return [$mulai, 'selesai'];
+        }
+
+        preg_match_all('/(\d{1,2})[.:](\d{2})/', $waktu, $all);
+        if (isset($all[1][1])) {
+            return [$mulai, str_pad($all[1][1], 2, '0', STR_PAD_LEFT).'.'.$all[2][1]];
+        }
+
+        return [$mulai, 'selesai'];
+    }
+
+    private static function jamKeTitik(string $jam): string
+    {
+        return str_replace(':', '.', $jam);
     }
 }

@@ -9,6 +9,7 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -98,5 +99,52 @@ class User extends Authenticatable implements FilamentUser
     public function accessPages()
     {
         return $this->belongsToMany(AccessPage::class, 'access_page_user');
+    }
+
+    /**
+     * Relasi ke master Ownership modul Arsip Digital.
+     */
+    public function ownerships(): BelongsToMany
+    {
+        return $this->belongsToMany(Ownership::class, 'ownership_user');
+    }
+
+    /**
+     * Cek apakah user memiliki hak akses ke ownership tertentu.
+     * Admin Arsip dan Superadmin (role 1) selalu memiliki akses penuh ke seluruh ownership.
+     */
+    public function canAccessOwnership(?int $ownershipId): bool
+    {
+        if ($this->isArsipAdmin()) {
+            return true;
+        }
+
+        if ($ownershipId === null) {
+            return true; // Dokumen umum / tanpa ownership khusus
+        }
+
+        return $this->ownerships()->where('ownerships.id', $ownershipId)->exists();
+    }
+
+    /**
+     * Cek apakah user berhak mengakses dokumen arsip tertentu berdasarkan ownership.
+     */
+    public function canAccessDocument(Document $document): bool
+    {
+        if ($this->isArsipAdmin()) {
+            return true;
+        }
+
+        // Pengunggah dokumen selalu boleh melihat dokumennya sendiri
+        if ($document->created_by === $this->id) {
+            return true;
+        }
+
+        // Dokumen orang lain hanya bisa dilihat jika sudah terbit (published) dan sesuai ownership
+        if ($document->status !== Document::STATUS_PUBLISHED) {
+            return false;
+        }
+
+        return $this->canAccessOwnership($document->ownership_id);
     }
 }

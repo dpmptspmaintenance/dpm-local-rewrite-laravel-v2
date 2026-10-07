@@ -51,6 +51,7 @@ class Document extends Model
         'status',
         'rejection_reason',
         'category_id',
+        'ownership_id',
         'created_by',
         'verified_by',
         'verified_at',
@@ -61,6 +62,11 @@ class Document extends Model
         return [
             'verified_at' => 'datetime',
         ];
+    }
+
+    public function ownership(): BelongsTo
+    {
+        return $this->belongsTo(Ownership::class);
     }
 
     public function category(): BelongsTo

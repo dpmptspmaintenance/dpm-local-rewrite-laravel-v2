@@ -118,19 +118,10 @@ class SuratTugasGeneratorService
         // nomor_naskah & ttd_pengirim SELALU dibiarkan literal — tidak ada
         // jalur untuk mengisinya dari tool ini sama sekali.
         //
-        // Dua slot berbeda di template pakai nilai yang sama tapi FORMAT
-        // beda: penutup surat (dekat "Kepala,") butuh "Semarang, j F Y"
-        // (kota + tanggal, lazim di naskah dinas), sementara baris
-        // "Nomor : ... / Tanggal : ..." di lampiran cuma butuh tanggal
-        // polos tanpa kota — placeholder template-nya sengaja dibedakan
-        // jadi tanggal_naskah vs tanggal_naskah_lampiran supaya tak perlu
-        // nebak-nebak strip prefix "Semarang, " dari string tersimpan.
+        // Template punya 3 kemunculan ${tanggal_naskah} (penutup + baris
+        // lampiran); semuanya pakai nilai yang sama.
         if (filled($suratTugas->tanggal_naskah)) {
             $tp->setValue('tanggal_naskah', $suratTugas->tanggal_naskah);
-            $tp->setValue(
-                'tanggal_naskah_lampiran',
-                (string) str($suratTugas->tanggal_naskah)->after('Semarang, ')
-            );
         }
 
         $tmp = tempnam($this->tempDir(), 'st_').'.docx';

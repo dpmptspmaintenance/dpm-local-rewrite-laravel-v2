@@ -2,6 +2,7 @@
 
 namespace App\Filament\Arsip\Widgets;
 
+use App\Filament\Arsip\Resources\DocumentResource;
 use App\Models\Document;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -14,7 +15,12 @@ class StatsOverview extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $pending = Document::where('status', Document::STATUS_PENDING)->count();
+        $baseQuery = DocumentResource::getEloquentQuery();
+
+        $pending = (clone $baseQuery)->where('status', Document::STATUS_PENDING)->count();
+        $published = (clone $baseQuery)->where('status', Document::STATUS_PUBLISHED)->count();
+        $rejected = (clone $baseQuery)->where('status', Document::STATUS_REJECTED)->count();
+        $total = (clone $baseQuery)->count();
 
         return [
             Stat::make('Menunggu Verifikasi', $pending)
@@ -22,18 +28,18 @@ class StatsOverview extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-clock')
                 ->color($pending > 0 ? 'warning' : 'gray'),
 
-            Stat::make('Diterbitkan', Document::where('status', Document::STATUS_PUBLISHED)->count())
+            Stat::make('Diterbitkan', $published)
                 ->description('Dokumen aktif')
                 ->descriptionIcon('heroicon-m-check-circle')
                 ->color('success'),
 
-            Stat::make('Ditolak', Document::where('status', Document::STATUS_REJECTED)->count())
+            Stat::make('Ditolak', $rejected)
                 ->description('Perlu diunggah ulang')
                 ->descriptionIcon('heroicon-m-x-circle')
                 ->color('danger'),
 
-            Stat::make('Total Dokumen', Document::count())
-                ->description('Seluruh arsip tercatat')
+            Stat::make('Total Dokumen', $total)
+                ->description('Arsip yang dapat diakses')
                 ->descriptionIcon('heroicon-m-document-text')
                 ->color('primary'),
         ];

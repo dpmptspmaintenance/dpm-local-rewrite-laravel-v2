@@ -4,6 +4,7 @@ namespace App\Filament\Arsip\Pages;
 
 use App\Models\Category;
 use App\Models\Document;
+use App\Models\Ownership;
 use App\Models\Tag;
 use App\Services\ArsipDigital\DocumentService;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * Dashboard Verifikasi — AGENTS.md § 2.A & § 5: layar kiri (iframe pratinjau
- * Google Drive), layar kanan (form judul/kategori/tag + Approve/Reject).
+ * Google Drive), layar kanan (form judul/kategori/tag/ownership + Approve/Reject).
  * Daftar antrean (dokumen pending_review) ditampilkan di atas; memilih satu
  * baris memuat split screen di bawahnya.
  */
@@ -41,7 +42,7 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
 
     protected static string | \UnitEnum | null $navigationGroup = 'Arsip';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 5;
 
     protected static ?string $title = 'Dashboard Verifikasi';
 
@@ -100,6 +101,7 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
         $this->form->fill([
             'title' => $document->title,
             'category_id' => $document->category_id,
+            'ownership_id' => $document->ownership_id,
             'tag_names' => $document->tags()->pluck('name')->all(),
         ]);
     }
@@ -116,9 +118,8 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
     public function form(Schema $schema): Schema
     {
         return $schema
-            // Verifikasi WAJIB melengkapi tiga isian ini (keputusan user) —
-            // beda dengan form upload staf yang semuanya opsional karena
-            // staf tidak wajib tahu klasifikasi final.
+            // Verifikasi WAJIB melengkapi isian judul & kategori,
+            // serta dapat menentukan Ownership hak akses dokumen.
             ->components([
                 TextInput::make('title')
                     ->label('Judul Dokumen')
@@ -131,6 +132,13 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
                     ->native(false)
                     ->required()
                     ->placeholder('— Pilih kategori —'),
+                Select::make('ownership_id')
+                    ->label('Ownership / Hak Akses')
+                    ->options(fn (): array => Ownership::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->searchable()
+                    ->native(false)
+                    ->placeholder('— Pilih Ownership (Kosong = Umum / Semua Unit) —')
+                    ->helperText('Tentukan unit pemilik arsip ini. Hanya pengguna di unit tersebut (dan Admin/Superadmin) yang dapat mengaksesnya.'),
                 TagsInput::make('tag_names')
                     ->label('Tag')
                     ->suggestions(fn (): array => Tag::query()->orderBy('name')->pluck('name')->all())
@@ -156,6 +164,7 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
             $state['title'] ?? null,
             $state['category_id'] ?? null,
             $state['tag_names'] ?? [],
+            $state['ownership_id'] ?? null,
         );
 
         Notification::make()->title('Dokumen diterbitkan')->success()->send();

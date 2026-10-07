@@ -107,6 +107,13 @@ class UserResource extends Resource
             TextInput::make('nip')
                 ->label('NIP')
                 ->maxLength(100),
+            Select::make('ownerships')
+                ->label('Ownership Arsip')
+                ->relationship('ownerships', 'name')
+                ->multiple()
+                ->preload()
+                ->searchable()
+                ->helperText('Unit arsip digital yang dapat diakses pengguna ini.'),
             Toggle::make('is_aktif')
                 ->label('Aktif')
                 ->default(true),
@@ -136,6 +143,11 @@ class UserResource extends Resource
                     ->label('Bidang')
                     ->searchable()
                     ->placeholder('—'),
+                TextColumn::make('ownerships.name')
+                    ->label('Ownership Arsip')
+                    ->badge()
+                    ->placeholder('—')
+                    ->toggleable(),
                 TextColumn::make('shared_pages')
                     ->label('Akses Menu')
                     ->badge()
@@ -154,6 +166,11 @@ class UserResource extends Resource
                 SelectFilter::make('role')
                     ->label('Role')
                     ->options(self::ROLES),
+                SelectFilter::make('ownerships')
+                    ->label('Ownership Arsip')
+                    ->relationship('ownerships', 'name')
+                    ->searchable()
+                    ->preload(),
                 TernaryFilter::make('is_aktif')
                     ->label('Status Akun')
                     ->placeholder('Semua')

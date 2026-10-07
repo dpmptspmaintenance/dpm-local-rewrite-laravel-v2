@@ -35,6 +35,11 @@ class EditSuratTugas extends EditRecord
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
+        // Pecah teks `waktu` lama ("09.00 WIB s.d. selesai") jadi 2 field input.
+        [$mulai, $selesai] = SuratTugasResource::parseWaktu($data['waktu'] ?? null);
+        $data['waktu_mulai'] = $mulai;
+        $data['waktu_selesai'] = $selesai;
+
         if (filled($data['hari_tanggal'] ?? null)) {
             $data['hari_tanggal'] = $this->parseIndonesianDate($data['hari_tanggal'], 'l, j F Y');
         }
@@ -57,6 +62,15 @@ class EditSuratTugas extends EditRecord
             // manual lewat tinker) — biarkan kosong daripada error di form.
             return null;
         }
+    }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        // Gabung waktu_mulai + waktu_selesai jadi teks `waktu` untuk template.
+        $data['waktu'] = SuratTugasResource::composeWaktu($data['waktu_mulai'] ?? null, $data['waktu_selesai'] ?? null);
+        unset($data['waktu_mulai'], $data['waktu_selesai']);
+
+        return $data;
     }
 
     protected function getRedirectUrl(): string

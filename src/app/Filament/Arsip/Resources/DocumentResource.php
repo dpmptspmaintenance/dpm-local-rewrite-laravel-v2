@@ -4,6 +4,7 @@ namespace App\Filament\Arsip\Resources;
 
 use App\Filament\Arsip\Resources\DocumentResource\Pages;
 use App\Models\Document;
+use App\Models\Ownership;
 use App\Models\Tag;
 use App\Services\ArsipDigital\DocumentService;
 use Filament\Actions\DeleteAction;
@@ -46,6 +47,17 @@ class DocumentResource extends Resource
     public static function canViewAny(): bool
     {
         return auth()->check();
+    }
+
+    public static function canView(Model $record): bool
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return false;
+        }
+
+        /** @var Document $record */
+        return $user->canAccessDocument($record);
     }
 
     /**
@@ -142,6 +154,42 @@ class DocumentResource extends Resource
                 ->placeholder('— Pilih kategori —')
                 ->native(false),
 
+            Select::make('ownership_id')
+                ->label('Ownership / Hak Akses')
+                ->relationship(
+                    name: 'ownership',
+                    titleAttribute: 'name',
+                    modifyQueryUsing: function (Builder $query): void {
+                        $user = Auth::user();
+                        if ($user && ! $user->isArsipAdmin()) {
+                            $query->whereIn('id', $user->ownerships()->pluck('ownerships.id'));
+                        }
+                    }
+                )
+                ->searchable()
+                ->preload()
+                ->placeholder('— Publik (Semua Pengguna) —')
+                ->native(false)
+                ->default(function (): ?int {
+                    $user = Auth::user();
+                    if (! $user) {
+                        return null;
+                    }
+                    $ownerships = $user->ownerships;
+
+                    return $ownerships->count() === 1 ? $ownerships->first()->id : null;
+                })
+                ->visibleOn(['create', 'edit'])
+                ->disabled(fn (string $operation): bool => $operation === 'edit' && ! Auth::user()->isArsipAdmin())
+                ->helperText(function (): string {
+                    $user = Auth::user();
+                    if ($user?->isArsipAdmin()) {
+                        return 'Admin / Superadmin memiliki akses penuh ke semua dokumen. Pilih unit atau kosongkan untuk Publik.';
+                    }
+
+                    return 'Pilih unit kepemilikan dokumen Anda atau kosongkan untuk Publik. Hanya dapat diatur saat unggah.';
+                }),
+
             TagsInput::make('tag_names')
                 ->label('Tag')
                 ->helperText('Ketik lalu tekan Enter. Tag baru otomatis dibuat. "Arsip" dan "arsip" dianggap sama.')
@@ -179,6 +227,13 @@ class DocumentResource extends Resource
                     ->formatStateUsing(fn (string $state): string => Document::SOURCES[$state] ?? $state)
                     ->color(fn (string $state): string => $state === Document::SOURCE_URL ? 'info' : 'gray')
                     ->sortable(),
+                TextColumn::make('ownership.name')
+                    ->label('Ownership')
+                    ->badge()
+                    ->placeholder('Umum')
+                    ->color(fn (?string $state): string => filled($state) ? 'info' : 'gray')
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('category.name')
                     ->label('Kategori')
                     ->placeholder('—')
@@ -230,6 +285,12 @@ class DocumentResource extends Resource
                     ->label('Status')
                     ->options(Document::STATUSES)
                     ->native(false),
+                SelectFilter::make('ownership_id')
+                    ->label('Ownership')
+                    ->relationship('ownership', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->native(false),
                 SelectFilter::make('category_id')
                     ->label('Kategori')
                     ->relationship('category', 'name')
@@ -258,12 +319,34 @@ class DocumentResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if (! Auth::user()->isArsipAdmin()) {
-            $query->where('created_by', Auth::id());
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
         }
 
-        return $query;
+        if ($user->isArsipAdmin()) {
+            return $query;
+        }
+
+        $userOwnershipIds = $user->ownerships()->pluck('ownerships.id')->all();
+
+        return $query->where(function (Builder $q) use ($user, $userOwnershipIds): void {
+            // 1. Dokumen yang diunggah oleh user ini sendiri (bisa lihat status apa pun)
+            $q->where('created_by', $user->id)
+              // 2. Dokumen terbit (published) yang berada di bawah ownership user atau dokumen umum (null)
+              ->orWhere(function (Builder $sub) use ($userOwnershipIds): void {
+                  $sub->where('status', Document::STATUS_PUBLISHED)
+                      ->where(function (Builder $ownerQ) use ($userOwnershipIds): void {
+                          if (! empty($userOwnershipIds)) {
+                              $ownerQ->whereIn('ownership_id', $userOwnershipIds)
+                                     ->orWhereNull('ownership_id');
+                          } else {
+                              $ownerQ->whereNull('ownership_id');
+                          }
+                      });
+              });
+        });
     }
 
     public static function getPages(): array
@@ -284,7 +367,7 @@ class DocumentResource extends Resource
      * @param  list<string>  $tagNames
      * @return array{ids: list<int>, errors: list<string>}
      */
-    public static function uploadBatch(array $files, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service): array
+    public static function uploadBatch(array $files, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null): array
     {
         $createdIds = [];
         $errors = [];
@@ -303,7 +386,7 @@ class DocumentResource extends Resource
             ];
 
             try {
-                $createdIds[] = $service->upload($meta, $user, $categoryId, $fileTitle, $tagNames)->id;
+                $createdIds[] = $service->upload($meta, $user, $categoryId, $fileTitle, $tagNames, $ownershipId)->id;
             } catch (\Throwable $e) {
                 $name = $file->getClientOriginalName();
                 $errors[] = "{$name}: ".self::ringkasError($e);
@@ -345,7 +428,7 @@ class DocumentResource extends Resource
      * @param  list<string>  $tagNames
      * @return array{ids: list<int>, errors: list<string>}
      */
-    public static function registerUrlBatch(array $urls, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service): array
+    public static function registerUrlBatch(array $urls, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null): array
     {
         $createdIds = [];
         $errors = [];
@@ -360,6 +443,7 @@ class DocumentResource extends Resource
                     $categoryId,
                     ($multiple || blank($title)) ? null : $title,
                     $tagNames,
+                    $ownershipId,
                 )->id;
             } catch (\Throwable $e) {
                 $errors[] = "{$url}: ".self::ringkasError($e);

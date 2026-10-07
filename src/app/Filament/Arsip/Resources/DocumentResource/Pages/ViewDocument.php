@@ -37,6 +37,11 @@ class ViewDocument extends ViewRecord
                             ->badge()
                             ->formatStateUsing(fn (string $state): string => Document::SOURCES[$state] ?? $state)
                             ->color(fn (string $state): string => $state === Document::SOURCE_URL ? 'info' : 'gray'),
+                        TextEntry::make('ownership.name')
+                            ->label('Ownership')
+                            ->badge()
+                            ->placeholder('— (Umum / Semua Unit)')
+                            ->color(fn (?string $state): string => filled($state) ? 'info' : 'gray'),
                         TextEntry::make('category.name')->label('Kategori')->placeholder('—'),
                         TextEntry::make('tags.name')->label('Tag')->badge()->placeholder('—'),
                         TextEntry::make('status')

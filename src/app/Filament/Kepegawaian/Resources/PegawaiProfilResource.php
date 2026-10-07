@@ -114,6 +114,56 @@ class PegawaiProfilResource extends Resource
                     TextEntry::make('jenis_domisili')->label('Jenis Domisili')->placeholder('—'),
                 ]),
 
+            Section::make('DUK Terakhir')
+                ->description('Data dari impor DUK (Daftar Urut Kepangkatan) terbaru')
+                ->columns(3)
+                ->collapsible()
+                ->schema([
+                    TextEntry::make('duk_terakhir_gol')
+                        ->label('Golongan')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->gol)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_tmt')
+                        ->label('TMT Golongan')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->tmt)
+                        ->date('d M Y')
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_masa_kerja')
+                        ->label('Masa Kerja')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->masaKerjaTeks())
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_jabatan')
+                        ->label('Jabatan')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->jabatan)
+                        ->columnSpan(2)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_eselon')
+                        ->label('Eselon')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->eselon)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_gol_cpns')
+                        ->label('Gol. CPNS')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->gol_cpns)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_tmt_cpns')
+                        ->label('TMT CPNS')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->tmt_cpns)
+                        ->date('d M Y')
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_pendidikan')
+                        ->label('Pendidikan')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->pendidikan)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_urutan')
+                        ->label('No. Urut DUK')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->urutan_duk)
+                        ->placeholder('—'),
+                    TextEntry::make('duk_terakhir_periode')
+                        ->label('Periode DUK')
+                        ->state(fn (PegawaiProfil $record) => $record->dukTerakhir()?->periode)
+                        ->placeholder('—'),
+                ]),
+
             Section::make('Sumber Data')
                 ->collapsible()
                 ->collapsed()

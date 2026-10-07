@@ -23,6 +23,7 @@ class CreateDocument extends CreateRecord
         $service = app(DocumentService::class);
         $title = $data['title'] ?? null;
         $categoryId = $data['category_id'] ?? null;
+        $ownershipId = $data['ownership_id'] ?? null;
         $tagNames = $data['tag_names'] ?? [];
 
         // Cabang mode URL: satu baris per baris teks di textarea `urls`.
@@ -35,9 +36,9 @@ class CreateDocument extends CreateRecord
                 ->values()
                 ->all();
 
-            $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service);
+            $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service, $ownershipId);
         } else {
-            $result = DocumentResource::uploadBatch($data['files'] ?? [], $title, $categoryId, $tagNames, $service);
+            $result = DocumentResource::uploadBatch($data['files'] ?? [], $title, $categoryId, $tagNames, $service, $ownershipId);
         }
 
         if ($result['ids'] === []) {
