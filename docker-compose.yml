@@ -9,6 +9,8 @@ services:
       - ./src:/var/www
     networks:
       - dpmptsp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   web:
     image: nginx:alpine
@@ -24,23 +26,6 @@ services:
     networks:
       - dpmptsp
 
-  db:
-    image: mysql:8.0
-    container_name: dpmptsp-db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: dpmptsp_new
-    ports:
-      - "3307:3306"
-    volumes:
-      - dbdata:/var/lib/mysql
-    networks:
-      - dpmptsp
-
 networks:
   dpmptsp:
     driver: bridge
-
-volumes:
-  dbdata:
