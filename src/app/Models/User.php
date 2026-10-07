@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasName;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -34,10 +35,15 @@ use Illuminate\Notifications\Notifiable;
     'is_admin_bangkit',
 ])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasName
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    public function getFilamentName(): string
+    {
+        return (string) ($this->nama ?: ($this->name ?: ($this->email ?: 'User')));
+    }
 
     /**
      * Gate per Filament panel. Kepegawaian: role 1 = full admin OR the
