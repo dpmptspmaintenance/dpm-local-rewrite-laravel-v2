@@ -23,16 +23,12 @@ Cache/compiled file di bawah `storage/framework/views/*`, `storage/framework/cac
 
 **Aturan:**
 1. Jangan pernah menjalankan `php artisan ...`, `composer ...`, atau menulis langsung ke `storage/` atau `bootstrap/cache/` dari tool host. Selalu jalankan melalui `docker exec -w /var/www dpmptsp-app php artisan ...`.
-2. Jika cache perlu diperbarui setelah perubahan kode, lakukan di dalam kontainer menggunakan pasangan clear & rebuild:
+2. **Selalu jalankan `optimize:clear` dan pastikan chown `www-data:www-data`** setelah membuat atau mengedit file kode, agar Blade compiler yang dijalankan oleh web server (Nginx/PHP-FPM) tidak mengalami benturan permission/UID `touch(): Utime failed`:
    ```sh
    docker exec -w /var/www dpmptsp-app php artisan optimize:clear
-   docker exec -w /var/www dpmptsp-app php artisan view:cache
-   ```
-3. Jika muncul masalah permission/UID:
-   ```sh
    docker exec -w /var/www dpmptsp-app chown -R www-data:www-data storage bootstrap/cache
    ```
-4. Jangan `rm`/`touch` file di bawah `storage/framework/views`, `storage/framework/cache`, atau `bootstrap/cache` langsung dari host.
+3. Jangan `rm`/`touch` file di bawah `storage/framework/views`, `storage/framework/cache`, atau `bootstrap/cache` langsung dari host.
 
 ---
 
