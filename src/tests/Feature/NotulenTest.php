@@ -132,8 +132,12 @@ class NotulenTest extends TestCase
         $this->assertStringContainsString('Dinas Kominfo', $docXml);
         $this->assertStringContainsString('Paragraf pertama hasil pembahasan teknis dengan', $docXml);
         $this->assertStringContainsString('teks tebal', $docXml);
-        $this->assertStringContainsString('Poin evaluasi pertama', $docXml);
-        $this->assertStringContainsString('Demikian Notulen ini dibuat untuk menjadikan periksa.', $docXml);
+        $this->assertStringContainsString('1. Dasar', $docXml);
+        $this->assertStringContainsString('2. Waktu dan Tempat Pelaksanaan', $docXml);
+        $this->assertStringContainsString('3. Narasumber :', $docXml);
+        $this->assertStringContainsString('4. Peserta :', $docXml);
+        $this->assertStringContainsString('5. Hasil Acara :', $docXml);
+        $this->assertStringContainsString('6. Demikian Notulen ini dibuat untuk menjadikan periksa.', $docXml);
         $this->assertStringContainsString('Semarang, 15 Oktober 2026', $docXml);
         $this->assertStringContainsString('Kepala Bidang DPMPTSP Kota Semarang', $docXml);
         $this->assertStringContainsString('Nama Penguji, S.T.', $docXml);
@@ -183,14 +187,16 @@ class NotulenTest extends TestCase
         $zip->close();
         @unlink($docxPath);
 
-        // Pastikan judul dan waktu tetap ada
+        // Pastikan judul dan waktu tetap ada dengan penomoran sekuensial yang rapi
         $this->assertStringContainsString('RAPAT KOORDINASI TANPA NARASUMBER DAN PESERTA', $docXml);
-        $this->assertStringContainsString('Waktu dan Tempat Pelaksanaan', $docXml);
+        $this->assertStringContainsString('1. Waktu dan Tempat Pelaksanaan', $docXml);
+        $this->assertStringContainsString('2. Hasil Acara :', $docXml);
+        $this->assertStringContainsString('3. Demikian Notulen ini dibuat.', $docXml);
 
         // Pastikan heading Dasar, Narasumber, dan Peserta ditiadakan secara bersih
-        $this->assertStringNotContainsString('Dasar</w:t>', $docXml);
-        $this->assertStringNotContainsString('Narasumber :</w:t>', $docXml);
-        $this->assertStringNotContainsString('Peserta :</w:t>', $docXml);
+        $this->assertStringNotContainsString('Dasar', $docXml);
+        $this->assertStringNotContainsString('Narasumber', $docXml);
+        $this->assertStringNotContainsString('Peserta', $docXml);
 
         // Pastikan numbered list dari WYSIWYG menjadi bernomor 1. dan 2.
         $this->assertStringContainsString('1. Poin evaluasi pertama', $docXml);

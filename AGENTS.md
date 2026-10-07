@@ -84,3 +84,31 @@ Modul Arsip Digital menggunakan Filament Panel di `/arsip` dengan arsitektur pen
    - Pengguna biasa **hanya dapat memilih unit ownership saat proses unggah (`create`)**: pilihannya terbatas pada grup unit yang diikutinya atau **Publik** (`null`).
    - Pengguna biasa **tidak dapat mengubah ownership** setelah dokumen diunggah (field disabled pada halaman edit).
    - Admin / Superadmin bebas menentukan atau mengubah ownership kapan saja (pada form create, edit, maupun Dashboard Verifikasi / `ReviewQueue`).
+
+---
+
+## 5. Modul Kepegawaian — Tool Notulen Maker (`/kepegawaian/notulen`) & Generator Word/PDF
+
+Modul Notulen Maker berada di panel Kepegawaian (`/kepegawaian/notulen`) menggunakan `NotulenResource` dan `NotulenGeneratorService`. Berbeda dengan Surat Tugas, Notulen tidak diunggah ke Srikandi sehingga tidak memerlukan nomor naskah.
+
+### 1. Struktur Form & Penandatangan
+- **Atasan (Mengetahui) & Yang Melaporkan**: Dipilih dari `User` dengan relasi live select. NIP, nama, dan jabatan terisi otomatis serta dapat disesuaikan manual.
+- **Hasil Acara**: Menggunakan RichEditor WYSIWYG yang mendukung format teks kaya, paragraf, dan daftar bernomor/peluru.
+
+### 2. Aturan Penomoran Bagian Naskah (Sequential & Adaptive)
+- Penomoran judul bagian naskah (**1. Dasar**, **2. Waktu dan Tempat Pelaksanaan**, **3. Narasumber :**, **4. Peserta :**, **5. Hasil Acara :**, **6. Penutup**) diatur secara sekuensial dan otomatis.
+- **Penanganan Bagian Kosong**:
+  - Jika **Dasar**, **Narasumber**, atau **Peserta** tidak memiliki data/isi, heading dan bloknya **wajib ditiadakan total** (tidak meninggalkan judul menggantung atau baris kosong sisa).
+  - Penomoran bagian setelahnya **wajib otomatis melanjutkan secara urut** (misal: jika Narasumber dan Peserta kosong, Hasil Acara menjadi nomor 3, dan Penutup nomor 4).
+- **Sub-Item Indentasi**:
+  - Item di bawah Dasar berhuruf `a. `, `b. `, `c. ` dengan hanging indent.
+  - Item di bawah Narasumber dan Peserta daftar bernomor `1. `, `2. ` dst dengan hanging indent.
+
+### 3. Penanganan WYSIWYG HTML ke OpenXML Word
+- Tag list HTML (`<ol>`, `<ul>`) dari RichEditor **wajib dinormalisasi** (`normalizeHtmlLists`) menjadi penomoran eksplisit (`1. `, `2. `, `a. ` dst) dengan hanging indent (`<w:ind w:left="720" w:hanging="360"/>`).
+- Tag `<w:numPr>` bawaan parser HTML PHPWord **wajib dibersihkan** dari XML hasil konversi agar aplikasi Word maupun LibreOffice tidak salah memetakan `numId` menjadi unordered bullet list.
+
+### 4. Keamanan XML & Konversi PDF LibreOffice
+- **XML Escaping Wajib**: Seluruh variabel yang dimasukkan ke `TemplateProcessor` (`setValue` dan `cloneBlock`) **wajib di-escape XML** (`htmlspecialchars($val, ENT_XML1 | ENT_QUOTES, 'UTF-8')`). Karakter mentah seperti `&` (misal pada nama jabatan "Potensi & Promosi") akan merusak validitas OpenXML dan membuat LibreOffice gagal memuat file (`Error: source file could not be loaded`).
+- **Konversi PDF Native**: Konversi PDF wajib menggunakan LibreOffice headless (`soffice --headless`). Pastikan template `.docx` valid sehingga tidak jatuh ke fallback DomPDF yang merusak margin, Kop Surat, dan tabel.
+

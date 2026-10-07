@@ -54,6 +54,8 @@ class NotulenGeneratorService
         // Judul Kegiatan
         $tp->setValue('judul', $this->xmlEscape($notulen->judul));
 
+        $secNo = 1;
+
         // Dasar
         $dasarLines = collect(preg_split('/\r\n|\r|\n/', (string) $notulen->dasar))
             ->map(fn (string $t): string => trim($t))
@@ -66,13 +68,29 @@ class NotulenGeneratorService
             $tp->cloneBlock('dasar_block', 0, true, false, []);
         } else {
             $tp->cloneBlock('dasar_hdr_block', 1, true, false, [[]]);
-            $tp->cloneBlock('dasar_block', count($dasarLines), true, false, array_map(
+            $tp->setValue('dasar_hdr', $this->xmlEscape("{$secNo}. Dasar"));
+            $secNo++;
+
+            $multiple = count($dasarLines) > 1;
+            $formattedDasar = [];
+            foreach ($dasarLines as $i => $line) {
+                if ($multiple && ! preg_match('/^[a-z0-9][\.\)]\s/i', $line)) {
+                    $prefix = chr(97 + ($i % 26)) . '. ';
+                    $formattedDasar[] = $prefix . $line;
+                } else {
+                    $formattedDasar[] = $line;
+                }
+            }
+
+            $tp->cloneBlock('dasar_block', count($formattedDasar), true, false, array_map(
                 fn (string $line): array => ['dasar_item' => $this->xmlEscape($line)],
-                $dasarLines
+                $formattedDasar
             ));
         }
 
         // Waktu dan Tempat Pelaksanaan
+        $tp->setValue('waktu_hdr', $this->xmlEscape("{$secNo}. Waktu dan Tempat Pelaksanaan"));
+        $secNo++;
         $tp->setValue('hari_tanggal', $this->xmlEscape($notulen->hari_tanggal));
         $tp->setValue('waktu', $this->xmlEscape($notulen->waktu));
         $tp->setValue('tempat', $this->xmlEscape($notulen->tempat));
@@ -89,9 +107,22 @@ class NotulenGeneratorService
             $tp->cloneBlock('narasumber_block', 0, true, false, []);
         } else {
             $tp->cloneBlock('narasumber_hdr_block', 1, true, false, [[]]);
-            $tp->cloneBlock('narasumber_block', count($narasumberLines), true, false, array_map(
+            $tp->setValue('narasumber_hdr', $this->xmlEscape("{$secNo}. Narasumber :"));
+            $secNo++;
+
+            $formattedNara = [];
+            foreach ($narasumberLines as $i => $line) {
+                if (! preg_match('/^\d+[\.\)]\s/', $line)) {
+                    $prefix = ($i + 1) . '. ';
+                    $formattedNara[] = $prefix . $line;
+                } else {
+                    $formattedNara[] = $line;
+                }
+            }
+
+            $tp->cloneBlock('narasumber_block', count($formattedNara), true, false, array_map(
                 fn (string $line): array => ['narasumber_item' => $this->xmlEscape($line)],
-                $narasumberLines
+                $formattedNara
             ));
         }
 
@@ -111,6 +142,8 @@ class NotulenGeneratorService
             $tp->cloneBlock('peserta_daftar_block', 0, true, false, []);
         } else {
             $tp->cloneBlock('peserta_hdr_block', 1, true, false, [[]]);
+            $tp->setValue('peserta_hdr', $this->xmlEscape("{$secNo}. Peserta :"));
+            $secNo++;
 
             if ($hasDeskripsi) {
                 $tp->cloneBlock('peserta_deskripsi_block', 1, true, false, [
@@ -121,9 +154,19 @@ class NotulenGeneratorService
             }
 
             if ($hasDaftar) {
-                $tp->cloneBlock('peserta_daftar_block', count($pesertaLines), true, false, array_map(
+                $formattedPeserta = [];
+                foreach ($pesertaLines as $i => $line) {
+                    if (! preg_match('/^\d+[\.\)]\s/', $line) && ! preg_match('/^[a-z][\.\)]\s/i', $line)) {
+                        $prefix = ($i + 1) . '. ';
+                        $formattedPeserta[] = $prefix . $line;
+                    } else {
+                        $formattedPeserta[] = $line;
+                    }
+                }
+
+                $tp->cloneBlock('peserta_daftar_block', count($formattedPeserta), true, false, array_map(
                     fn (string $line): array => ['peserta_item' => $this->xmlEscape($line)],
-                    $pesertaLines
+                    $formattedPeserta
                 ));
             } else {
                 $tp->cloneBlock('peserta_daftar_block', 0, true, false, []);
@@ -131,12 +174,18 @@ class NotulenGeneratorService
         }
 
         // Hasil Acara (mendukung format WYSIWYG / HTML dan teks polos)
+        $tp->setValue('hasil_hdr', $this->xmlEscape("{$secNo}. Hasil Acara :"));
+        $secNo++;
         $this->injectHasilAcara($tp, (string) $notulen->hasil_acara);
 
         // Penutup
         $penutup = filled($notulen->penutup)
             ? (string) $notulen->penutup
             : "Demikian Notulen {$notulen->judul} untuk menjadikan periksa.";
+
+        if (! preg_match('/^\d+[\.\)]\s/', $penutup)) {
+            $penutup = "{$secNo}. {$penutup}";
+        }
         $tp->setValue('penutup', $this->xmlEscape($penutup));
 
         // Tanggal Naskah
