@@ -17,6 +17,8 @@ class SisaCutiTahunan extends TableWidget
 {
     public ?string $nip = null;
 
+    protected static bool $isDiscovered = false;
+
     protected static bool $isLazy = false;
 
     public function table(Table $table): Table
