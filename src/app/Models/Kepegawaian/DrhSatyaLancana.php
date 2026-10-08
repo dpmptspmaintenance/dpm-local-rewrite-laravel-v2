@@ -73,19 +73,21 @@ class DrhSatyaLancana extends Model
 
     /**
      * Hapus folder berkas lampiran fisik saat DRH dihapus (baris DB dokumen
-     * ikut cascade, tapi file di disk harus dibersihkan manual).
+     * ikut cascade, tapi file di disk arsip harus dibersihkan manual).
      */
     protected static function booted(): void
     {
         static::deleting(function (self $drh): void {
-            $dir = storage_path('app/drh-satya-lancana/'.$drh->getKey());
+            $dir = 'Kepegawaian/drh/'.$drh->getKey();
 
-            foreach (glob($dir.'/*') ?: [] as $file) {
-                @unlink($file);
-            }
+            try {
+                $disk = \Illuminate\Support\Facades\Storage::disk('arsip');
 
-            if (is_dir($dir)) {
-                @rmdir($dir);
+                if ($disk->directoryExists($dir)) {
+                    $disk->deleteDirectory($dir);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[drh] gagal hapus folder berkas: '.$e->getMessage(), ['dir' => $dir]);
             }
         });
     }

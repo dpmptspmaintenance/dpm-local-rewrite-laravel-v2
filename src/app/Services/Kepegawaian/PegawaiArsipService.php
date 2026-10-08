@@ -12,10 +12,11 @@ use Illuminate\Support\Facades\Log;
 /**
  * Orkestrasi upload/hapus arsip berkas pegawai. Reuse LocalArsipStorage yang
  * sama dipakai modul Arsip Digital (/arsip) — bukan penyimpanan kedua — tapi
- * lewat subfolder "Kepegawaian" tersendiri di dalam root disk arsip, supaya
- * berkas pegawai tidak bercampur dengan dokumen OPD umum di modul /arsip.
+ * lewat subfolder "Kepegawaian/pegawai" tersendiri di dalam root disk arsip,
+ * supaya berkas pegawai tidak bercampur dengan dokumen OPD umum di modul
+ * /arsip maupun berkas DRH Satya Lancana ("Kepegawaian/drh").
  *
- * Struktur folder disk: {ARSIP_LOCAL_ROOT}/Kepegawaian/{NIP - Nama}/
+ * Struktur folder disk: {ARSIP_LOCAL_ROOT}/Kepegawaian/pegawai/{NIP - Nama}/
  * — satu subfolder per pegawai, dibuat sekali (lazy, saat berkas pertama
  * pegawai itu diunggah) lalu path-nya di-cache (folder tak berpindah untuk
  * NIP yang sama; cache diberi TTL agar perbaikan/pemindahan folder manual
@@ -95,15 +96,16 @@ class PegawaiArsipService
     }
 
     /**
-     * Path subfolder disk khusus satu pegawai (dibuat sekali, lazy). Nama
-     * folder "{NIP} - {Nama}" — hasilnya di-cache per NIP dengan TTL karena
-     * folder tak berpindah untuk pegawai yang sama, tapi TTL mencegah path
-     * basi tertahan permanen bila folder dipindah/rename manual.
+     * Path subfolder disk khusus satu pegawai (dibuat sekali, lazy). Struktur:
+     * "Kepegawaian/pegawai/{NIP} - {Nama}" — nama folder "{NIP} - {Nama}"
+     * di-cache per NIP dengan TTL karena folder tak berpindah untuk pegawai
+     * yang sama, tapi TTL mencegah path basi tertahan permanen bila folder
+     * dipindah/rename manual.
      */
     private function pegawaiFolderId(string $nip): string
     {
         return Cache::remember(self::CACHE_PEGAWAI_PREFIX.$nip, now()->addDays(self::CACHE_TTL_DAYS), function () use ($nip): string {
-            $root = $this->rootFolderId();
+            $root = $this->pegawaiRootFolderId();
             $nama = PegawaiProfil::query()->where('nip', $nip)->value('nama') ?: $nip;
             $folderName = "{$nip} - {$nama}";
 
@@ -112,14 +114,17 @@ class PegawaiArsipService
     }
 
     /**
-     * Path subfolder "Kepegawaian" di dalam root disk arsip
+     * Path subfolder "Kepegawaian/pegawai" di dalam root disk arsip
      * (ARSIP_LOCAL_ROOT) — dibuat sekali, lazy, lalu di-cache dengan TTL.
+     * Dipisah dari "Kepegawaian/drh" supaya berkas pegawai tidak bercampur
+     * dengan berkas DRH Satya Lancana.
      */
-    private function rootFolderId(): string
+    private function pegawaiRootFolderId(): string
     {
-        return Cache::remember(self::CACHE_ROOT, now()->addDays(self::CACHE_TTL_DAYS), fn (): string => $this->drive->findOrCreateFolder(
-            'Kepegawaian',
-            $this->drive->rootFolderId(),
-        ));
+        return Cache::remember(self::CACHE_ROOT, now()->addDays(self::CACHE_TTL_DAYS), function (): string {
+            $kepegawaian = $this->drive->findOrCreateFolder('Kepegawaian', $this->drive->rootFolderId());
+
+            return $this->drive->findOrCreateFolder('pegawai', $kepegawaian);
+        });
     }
 }

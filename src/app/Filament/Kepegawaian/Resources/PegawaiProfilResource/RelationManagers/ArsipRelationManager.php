@@ -37,8 +37,8 @@ class ArsipRelationManager extends RelationManager
     {
         return [
             Action::make('unggah')
-                ->label('Unggah Arsip')
-                ->icon('heroicon-o-arrow-up-tray')
+                ->label('Tambah Arsip')
+                ->icon('heroicon-o-plus')
                 ->schema([
                     FileUpload::make('files')
                         ->label('Berkas')

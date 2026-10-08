@@ -45,6 +45,13 @@ return [
             'driver' => 'local',
             'root' => config('arsip.local_root'),
             'throw' => true,
+            // Berkas/folder baru dibuat world-readable + writable oleh grup
+            // agar web server (www-data) dan proses CLI tak saling mengunci
+            // saat keduanya menulis ke disk yang sama.
+            'permissions' => [
+                'file' => ['public' => 0664],
+                'dir' => ['public' => 0775],
+            ],
         ],
 
         'public' => [

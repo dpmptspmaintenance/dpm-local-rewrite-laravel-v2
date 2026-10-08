@@ -372,7 +372,39 @@ class DrhSatyaLancanaResource extends Resource
             return '✗ BELUM diunggah.';
         }
 
+        $service = app(\App\Services\Kepegawaian\DrhSatyaLancanaDocumentService::class);
+
+        if (! is_file($service->absolutePath($doc))) {
+            return '✗ BELUM diunggah (berkas fisik tidak ditemukan).';
+        }
+
         return '✓ SUDAH diunggah: '.($doc->original_filename ?? basename((string) $doc->path));
+    }
+
+    /**
+     * Aksi unduh satu berkas lampiran (SK CPNS, SK Jabatan, dll.) dari disk
+     * lokal lewat suffixAction pada TextEntry. Selalu dikembalikan agar
+     * Filament tak error; tombol hanya muncul (visible) bila berkas ada dan
+     * fisiknya tersedia.
+     */
+    public static function unduhLampiranAction(DrhSatyaLancana $drh, string $jenis): Action
+    {
+        $service = app(\App\Services\Kepegawaian\DrhSatyaLancanaDocumentService::class);
+        $doc = $drh->dokumen()->where('jenis', $jenis)->first();
+        $exists = $doc !== null && is_file($service->absolutePath($doc));
+
+        return Action::make('unduh_lampiran_'.$jenis)
+            ->label('Unduh')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->color('gray')
+            ->tooltip('Unduh lampiran '.strtoupper($jenis))
+            ->visible($exists)
+            ->action(function () use ($service, $doc): BinaryFileResponse {
+                $path = $service->absolutePath($doc);
+                $filename = $doc->original_filename ?: (strtoupper($doc->jenis).'.'.pathinfo($path, PATHINFO_EXTENSION));
+
+                return response()->download($path, $filename);
+            });
     }
 
     /**
@@ -464,6 +496,9 @@ class DrhSatyaLancanaResource extends Resource
                         fn (string $label, string $jenis): TextEntry => TextEntry::make('status_berkas_'.$jenis)
                             ->label(strtoupper($jenis).'. '.$label)
                             ->state(fn (DrhSatyaLancana $record): string => self::statusBerkas($record, $jenis))
+                            ->suffixAction(
+                                fn (DrhSatyaLancana $record): ?Action => self::unduhLampiranAction($record, $jenis),
+                            )
                             ->columnSpanFull(),
                     )->all(),
                 ]),
