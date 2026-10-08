@@ -7,6 +7,7 @@ services:
     working_dir: /var/www
     volumes:
       - ./src:/var/www
+      - /mnt/d/arsip:/var/www/storage/arsip
     networks:
       - dpmptsp
     extra_hosts:
@@ -21,6 +22,7 @@ services:
     volumes:
       - ./src:/var/www
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - /mnt/d/arsip:/var/www/storage/arsip
     depends_on:
       - app
     networks:
