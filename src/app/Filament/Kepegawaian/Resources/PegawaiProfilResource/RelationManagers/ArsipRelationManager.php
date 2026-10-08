@@ -8,8 +8,8 @@ use App\Services\Kepegawaian\PegawaiArsipService;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -33,50 +33,42 @@ class ArsipRelationManager extends RelationManager
 
     protected static string | \BackedEnum | null $icon = 'heroicon-o-archive-box';
 
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('unggah')
-                ->label('Tambah Arsip')
-                ->icon('heroicon-o-plus')
-                ->schema([
-                    FileUpload::make('files')
-                        ->label('Berkas')
-                        ->helperText(fn (): string => 'Bisa unggah banyak sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas.')
-                        ->multiple()
-                        ->storeFiles(false)
-                        ->acceptedFileTypes(self::acceptedMimeTypes())
-                        ->maxSize(config('arsip.max_upload_kb'))
-                        ->required(),
-                    TextInput::make('judul')
-                        ->label('Judul')
-                        ->helperText('Kosong = nama file. Diabaikan bila unggah > 1 berkas sekaligus.')
-                        ->maxLength(255),
-                    Select::make('kategori')
-                        ->label('Kategori')
-                        ->helperText('Bebas ketik — mis. SKP, SK Kenaikan Pangkat, SK Jabatan, Foto, Ijazah.')
-                        ->options(fn (): array => collect(app(PegawaiArsipService::class)->kategoriSuggestions())
-                            ->mapWithKeys(fn (string $k): array => [$k => $k])
-                            ->all())
-                        ->searchable()
-                        ->createOptionUsing(fn (string $value): string => $value)
-                        ->native(false),
-                ])
-                ->action(function (array $data): void {
-                    PegawaiArsipResource::uploadBatch(
-                        $this->getOwnerRecord()->nip,
-                        $data['files'] ?? [],
-                        $data['judul'] ?? null,
-                        $data['kategori'] ?? null,
-                    );
-                }),
-        ];
-    }
-
     public function table(Table $table): Table
     {
         return $table
             ->recordTitleAttribute('judul')
+            ->headerActions([
+                Action::make('unggah')
+                    ->label('Tambah Arsip')
+                    ->icon('heroicon-o-plus')
+                    ->schema([
+                        FileUpload::make('files')
+                            ->label('Berkas')
+                            ->helperText(fn (): string => 'Bisa unggah banyak sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas.')
+                            ->multiple()
+                            ->storeFiles(false)
+                            ->acceptedFileTypes(self::acceptedMimeTypes())
+                            ->maxSize(config('arsip.max_upload_kb'))
+                            ->required(),
+                        TextInput::make('judul')
+                            ->label('Judul')
+                            ->helperText('Kosong = nama file. Diabaikan bila unggah > 1 berkas sekaligus.')
+                            ->maxLength(255),
+                        TextInput::make('kategori')
+                            ->label('Kategori')
+                            ->helperText('Bebas ketik — mis. SKP, SK Kenaikan Pangkat, SK Jabatan, Foto, Ijazah.')
+                            ->datalist(fn (): array => app(PegawaiArsipService::class)->kategoriSuggestions())
+                            ->maxLength(100),
+                    ])
+                    ->action(function (array $data): void {
+                        PegawaiArsipResource::uploadBatch(
+                            $this->getOwnerRecord()->nip,
+                            $data['files'] ?? [],
+                            $data['judul'] ?? null,
+                            $data['kategori'] ?? null,
+                        );
+                    }),
+            ])
             ->columns([
                 TextColumn::make('judul')
                     ->label('Judul')
@@ -117,6 +109,56 @@ class ArsipRelationManager extends RelationManager
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (PegawaiArsip $record): string => $record->openUrl())
                     ->openUrlInNewTab(),
+                Action::make('edit')
+                    ->label('Edit')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->fillForm(fn (PegawaiArsip $record): array => [
+                        'judul' => $record->judul,
+                        'kategori' => $record->kategori,
+                    ])
+                    ->schema([
+                        TextInput::make('judul')
+                            ->label('Judul')
+                            ->required()
+                            ->maxLength(255),
+                        TextInput::make('kategori')
+                            ->label('Kategori')
+                            ->helperText('Bebas ketik — mis. SKP, SK Kenaikan Pangkat, SK Jabatan, Foto, Ijazah.')
+                            ->datalist(fn (): array => app(PegawaiArsipService::class)->kategoriSuggestions())
+                            ->maxLength(100),
+                        FileUpload::make('berkas')
+                            ->label('Ganti Berkas (opsional)')
+                            ->helperText('Biarkan kosong bila hanya ingin mengubah judul/kategori.')
+                            ->storeFiles(false)
+                            ->acceptedFileTypes(self::acceptedMimeTypes())
+                            ->maxSize(config('arsip.max_upload_kb')),
+                    ])
+                    ->action(function (PegawaiArsip $record, array $data): void {
+                        $service = app(PegawaiArsipService::class);
+
+                        $record->update([
+                            'judul' => $data['judul'],
+                            'kategori' => filled($data['kategori'] ?? null) ? trim($data['kategori']) : null,
+                        ]);
+
+                        $file = $data['berkas'] ?? null;
+
+                        if ($file instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                            $service->replaceFile($record, [
+                                'path' => $file->getRealPath(),
+                                'filename' => $file->getClientOriginalName(),
+                                'mime' => $file->getMimeType() ?: 'application/octet-stream',
+                                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
+                                'size' => (int) $file->getSize(),
+                            ]);
+                        }
+
+                        Notification::make()
+                            ->title('Arsip diperbarui')
+                            ->success()
+                            ->send();
+                    }),
                 DeleteAction::make()
                     ->using(fn (PegawaiArsip $record) => app(PegawaiArsipService::class)->delete($record)),
             ])

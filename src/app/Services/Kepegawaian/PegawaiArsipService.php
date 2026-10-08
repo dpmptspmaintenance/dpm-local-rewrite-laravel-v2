@@ -78,6 +78,42 @@ class PegawaiArsipService
     }
 
     /**
+     * Ganti berkas fisik satu arsip (opsional saat edit metadata). Tulis
+     * berkas baru dulu ke disk, baru update baris; berkas lama dihapus
+     * SETELAH update sukses supaya tidak kehilangan berkas bila update DB
+     * gagal. Bila berkas baru gagal diunggah, baris lama tak tersentuh.
+     *
+     * @param  array{path: string, filename: string, mime: string, extension: string, size: int}  $file
+     */
+    public function replaceFile(PegawaiArsip $arsip, array $file): void
+    {
+        $folderPath = $this->pegawaiFolderId($arsip->nip);
+
+        $uploaded = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $folderPath);
+        $oldPath = $arsip->storage_path;
+
+        try {
+            $arsip->update([
+                'storage_path' => $uploaded['id'],
+                'original_filename' => $file['filename'],
+                'file_extension' => $file['extension'],
+                'mime_type' => $file['mime'],
+                'file_size' => $file['size'],
+            ]);
+        } catch (\Throwable $e) {
+            // Rollback: hapus berkas baru, baris lama tetap utuh.
+            $this->drive->delete($uploaded['id']);
+            Log::error('[arsip-kepegawaian] ganti berkas dibatalkan, berkas baru dihapus: '.$e->getMessage());
+
+            throw $e;
+        }
+
+        if ($oldPath && $oldPath !== $uploaded['id']) {
+            $this->drive->delete($oldPath);
+        }
+    }
+
+    /**
      * Daftar nama kategori yang sudah pernah dipakai — untuk suggestions di
      * TagsInput/Select kategori bebas-ketik (bukan tabel master terpisah).
      *

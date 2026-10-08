@@ -38,6 +38,12 @@ class ConvertExcelToPdf extends Page
 
     protected static ?string $title = 'Convert Excel ke PDF';
 
+    /** Tool disembunyikan dari navigasi (halaman tetap bisa diakses via URL). */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     protected string $view = 'filament.kepegawaian.pages.convert-excel-to-pdf';
 
     public ?array $data = [];

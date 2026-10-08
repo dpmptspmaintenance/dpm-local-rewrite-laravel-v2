@@ -87,15 +87,11 @@ class PegawaiArsipResource extends Resource
                         ->helperText('Kosong = nama file. Diabaikan bila unggah lebih dari 1 berkas sekaligus (tiap berkas pakai nama filenya sendiri).')
                         ->maxLength(255)
                         ->visibleOn('create'),
-                    Select::make('kategori')
+                    TextInput::make('kategori')
                         ->label('Kategori')
                         ->helperText('Bebas ketik — mis. SKP, SK Kenaikan Pangkat, SK Jabatan, Foto, Ijazah.')
-                        ->options(fn (): array => collect(app(PegawaiArsipService::class)->kategoriSuggestions())
-                            ->mapWithKeys(fn (string $k): array => [$k => $k])
-                            ->all())
-                        ->searchable()
-                        ->createOptionUsing(fn (string $value): string => $value)
-                        ->native(false),
+                        ->datalist(fn (): array => app(PegawaiArsipService::class)->kategoriSuggestions())
+                        ->maxLength(100),
                 ]),
         ]);
     }
@@ -158,6 +154,56 @@ class PegawaiArsipResource extends Resource
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (PegawaiArsip $record): string => $record->openUrl())
                     ->openUrlInNewTab(),
+                Action::make('edit')
+                    ->label('Edit')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->fillForm(fn (PegawaiArsip $record): array => [
+                        'judul' => $record->judul,
+                        'kategori' => $record->kategori,
+                    ])
+                    ->schema([
+                        TextInput::make('judul')
+                            ->label('Judul')
+                            ->required()
+                            ->maxLength(255),
+                        TextInput::make('kategori')
+                            ->label('Kategori')
+                            ->helperText('Bebas ketik — mis. SKP, SK Kenaikan Pangkat, SK Jabatan, Foto, Ijazah.')
+                            ->datalist(fn (): array => app(PegawaiArsipService::class)->kategoriSuggestions())
+                            ->maxLength(100),
+                        FileUpload::make('berkas')
+                            ->label('Ganti Berkas (opsional)')
+                            ->helperText('Biarkan kosong bila hanya ingin mengubah judul/kategori.')
+                            ->storeFiles(false)
+                            ->acceptedFileTypes(self::acceptedMimeTypes())
+                            ->maxSize(config('arsip.max_upload_kb')),
+                    ])
+                    ->action(function (PegawaiArsip $record, array $data): void {
+                        $service = app(PegawaiArsipService::class);
+
+                        $record->update([
+                            'judul' => $data['judul'],
+                            'kategori' => filled($data['kategori'] ?? null) ? trim($data['kategori']) : null,
+                        ]);
+
+                        $file = $data['berkas'] ?? null;
+
+                        if ($file instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                            $service->replaceFile($record, [
+                                'path' => $file->getRealPath(),
+                                'filename' => $file->getClientOriginalName(),
+                                'mime' => $file->getMimeType() ?: 'application/octet-stream',
+                                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
+                                'size' => (int) $file->getSize(),
+                            ]);
+                        }
+
+                        Notification::make()
+                            ->title('Arsip diperbarui')
+                            ->success()
+                            ->send();
+                    }),
                 // Hapus lewat PegawaiArsipService supaya berkas Drive ikut
                 // terhapus — jangan pakai DeleteAction bawaan (cuma hapus baris DB).
                 DeleteAction::make()
