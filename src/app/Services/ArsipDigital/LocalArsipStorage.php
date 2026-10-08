@@ -193,7 +193,7 @@ class LocalArsipStorage
                 $disk->deleteDirectory($path);
             }
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('[arsip-local] gagal hapus folder: '.$e->getMessage(), ['path' => $path]);
+            Log::warning('[arsip-local] gagal hapus folder: '.$e->getMessage(), ['path' => $path]);
         }
     }
 

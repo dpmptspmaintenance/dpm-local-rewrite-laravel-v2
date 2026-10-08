@@ -64,6 +64,10 @@ class ArsipLocalStorageTest extends TestCase
         $this->assertNull($file->google_file_id);
         Storage::disk('arsip')->assertExists($file->storage_path);
 
+        // Berkas mentah berada di "{tahun}/etc/".
+        $year = now()->year;
+        $this->assertStringStartsWith($year.'/etc/', $file->storage_path);
+
         @unlink($tmp);
     }
 
@@ -97,15 +101,20 @@ class ArsipLocalStorageTest extends TestCase
         $file->refresh();
 
         $this->assertNotNull($document->drive_folder_id);
+        $year = now()->year;
+        $this->assertStringStartsWith($year.'/', $document->drive_folder_id);
         $this->assertStringStartsWith($document->drive_folder_id.'/', $file->storage_path);
         Storage::disk('arsip')->assertExists($file->storage_path);
         Storage::disk('arsip')->assertMissing($original);
 
+        // Folder tahun tetap setelah dokumen dihapus.
         $folderPath = $document->drive_folder_id;
+        $yearPath = $year;
         $service->delete($document->fresh());
 
         Storage::disk('arsip')->assertMissing($file->storage_path);
         $this->assertFalse(Storage::disk('arsip')->directoryExists($folderPath));
+        $this->assertTrue(Storage::disk('arsip')->directoryExists($yearPath));
 
         @unlink($tmp);
     }

@@ -33,7 +33,14 @@ class DocumentService
      */
     public function upload(array $file, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null): Document
     {
-        $uploaded = $this->drive->upload($file['path'], $file['filename'], $file['mime']);
+        // Berkas mentah (belum diverifikasi) masuk ke "{tahun}/etc/" — tahun
+        // dari tanggal unggah (now()), bukan created_at record (belum ada).
+        $uploaded = $this->drive->uploadTo(
+            $file['path'],
+            $file['filename'],
+            $file['mime'],
+            $this->pendingFolderForYear(now()->year),
+        );
 
         try {
             return DB::transaction(function () use ($file, $uploader, $categoryId, $title, $tagNames, $uploaded, $ownershipId): Document {
@@ -162,7 +169,8 @@ class DocumentService
 
             if (! $folderPath) {
                 $folderName = $document->folderName();
-                $folderPath = $this->drive->createFolder($folderName, $this->drive->rootFolderId());
+                $yearPath = $this->yearFolderFor($document);
+                $folderPath = $this->drive->createFolder($folderName, $yearPath);
 
                 $document->update([
                     'drive_folder_id' => $folderPath,
@@ -187,6 +195,39 @@ class DocumentService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Path folder "{tahun}/etc" untuk dokumen ini — dipakai berkas mentah
+     * yang belum diverifikasi. Tahun dari created_at dokumen (tanggal unggah).
+     */
+    private function pendingFolderForDocument(Document $document): string
+    {
+        $year = ($document->created_at ?? now())->year;
+
+        return $this->pendingFolderForYear($year);
+    }
+
+    /**
+     * Path folder "{tahun}/etc" — buat folder tahun dan subfolder "etc"
+     * bila belum ada, lalu kembalikan path-nya.
+     */
+    private function pendingFolderForYear(int $year): string
+    {
+        $yearPath = $this->drive->findOrCreateFolder((string) $year, $this->drive->rootFolderId());
+
+        return $this->drive->findOrCreateFolder('etc', $yearPath);
+    }
+
+    /**
+     * Path folder "{tahun}" (polos) tempat folder dokumen dibuat. Tahun dari
+     * created_at dokumen — konsisten dengan format nama folder dokumen.
+     */
+    private function yearFolderFor(Document $document): string
+    {
+        $year = ($document->created_at ?? now())->year;
+
+        return $this->drive->findOrCreateFolder((string) $year, $this->drive->rootFolderId());
     }
 
     /**
@@ -285,7 +326,7 @@ class DocumentService
      */
     public function addFiles(Document $document, array $files): void
     {
-        $targetFolderId = $document->drive_folder_id ?: $this->drive->pendingFolderId();
+        $targetFolderId = $document->drive_folder_id ?: $this->pendingFolderForDocument($document);
 
         foreach ($files as $file) {
             $uploaded = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $targetFolderId);
