@@ -3,14 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Metadata arsip. Berkas fisik disimpan di Google Drive — satu dokumen bisa
+ * Metadata arsip. Berkas fisik disimpan di disk lokal — satu dokumen bisa
  * punya 0..N berkas, semuanya setara (model list flat, tanpa konsep "utama").
- * Lihat App\Services\ArsipDigital\GoogleDriveService.
+ * Lihat App\Services\ArsipDigital\LocalArsipStorage.
  */
 class Document extends Model
 {
@@ -121,8 +121,8 @@ class Document extends Model
     }
 
     /**
-     * Nama folder Drive khusus dokumen ini, dibuat saat diorganisasi (Approve
-     * / merge) di dalam folder induk (ARSIP_DRIVE_FOLDER_ID). Format:
+     * Nama folder khusus dokumen ini, dibuat saat diorganisasi (Approve /
+     * merge) di dalam root disk arsip (ARSIP_LOCAL_ROOT). Format:
      * "YYYY-MM-DD - {judul}" — tanggal dari created_at (tanggal unggah).
      */
     public function folderName(): string
@@ -157,8 +157,8 @@ class Document extends Model
     /**
      * URL yang dibuka saat user menekan tombol buka:
      * - tipe url  : tautan aslinya langsung.
-     * - tipe file : folder Drive dokumen kalau sudah ada, kalau belum ke
-     *               berkas pertama, kalau tidak ada berkas sama sekali '#'.
+     * - tipe file : berkas pertama dokumen (di disk lokal) via route app,
+     *               fallback ke daftar dokumen bila tak ada berkas.
      */
     public function openUrl(): string
     {
@@ -166,10 +166,8 @@ class Document extends Model
             return (string) $this->source_url;
         }
 
-        if ($this->drive_folder_id) {
-            return "https://drive.google.com/drive/folders/{$this->drive_folder_id}";
-        }
+        $first = $this->files->first();
 
-        return $this->files->first()?->openUrl() ?? '#';
+        return $first?->openUrl() ?? route('arsip.berkas.document-file', ['documentFile' => 0]);
     }
 }

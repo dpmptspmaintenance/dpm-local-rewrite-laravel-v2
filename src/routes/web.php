@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\ArsipDigital\ConnectGoogleController;
+use App\Http\Controllers\ArsipDigital\ArsipFileController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Bangkit\BangkitController;
 use App\Http\Controllers\Bangkit\BangkitUserController;
@@ -458,10 +458,11 @@ Route::middleware('auth')->group(function () {
     });
 });
 
-// Koneksi awal Google Drive (mode auth oauth — Gmail gratis). Hanya dipakai
-// SEKALI untuk mendapatkan ARSIP_DRIVE_OAUTH_REFRESH_TOKEN; setelah itu
-// tidak dipakai lagi sampai token dicabut manual user.
-Route::prefix('arsip/oauth')->name('arsip.connect-google')->group(function (): void {
-    Route::get('/', [ConnectGoogleController::class, 'redirect']);
-    Route::get('/callback', [ConnectGoogleController::class, 'callback'])->name('.callback');
+// Penyajian berkas arsip dari disk lokal (unduh / pratinjau inline).
+// Otorisasi ownership diperiksa di controller — lihat AGENTS.md § 4.
+Route::middleware('auth')->group(function (): void {
+    Route::get('/arsip/berkas/{documentFile}', [ArsipFileController::class, 'showDocumentFile'])
+        ->name('arsip.berkas.document-file');
+    Route::get('/kepegawaian/arsip-berkas/{pegawaiArsip}', [ArsipFileController::class, 'showPegawaiArsip'])
+        ->name('arsip.berkas.pegawai-arsip');
 });

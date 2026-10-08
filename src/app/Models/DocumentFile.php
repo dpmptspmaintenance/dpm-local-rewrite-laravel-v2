@@ -9,11 +9,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Satu berkas fisik milik satu Document — TIDAK ada konsep "utama vs ekstra":
  * semua berkas dokumen adalah baris DocumentFile biasa di tabel ini. Model
  * list flat (keputusan user).
+ *
+ * Berkas fisik kini di disk lokal (`storage_path`); `google_file_id` masih
+ * ada di DB sebagai kolom legacy (nullable) untuk data lama yang diabaikan.
  */
 class DocumentFile extends Model
 {
     protected $fillable = [
         'document_id',
+        'storage_path',
         'google_file_id',
         'google_web_view_link',
         'original_filename',
@@ -34,13 +38,16 @@ class DocumentFile extends Model
         return $this->belongsTo(Document::class);
     }
 
+    /**
+     * URL pratinjau/unduh dari route aplikasi (bukan lagi Google Drive).
+     */
     public function previewUrl(): string
     {
-        return "https://drive.google.com/file/d/{$this->google_file_id}/preview";
+        return route('arsip.berkas.document-file', ['documentFile' => $this->getKey()]);
     }
 
     public function openUrl(): string
     {
-        return $this->google_web_view_link ?: $this->previewUrl();
+        return $this->previewUrl();
     }
 }

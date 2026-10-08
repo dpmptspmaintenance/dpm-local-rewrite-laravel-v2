@@ -7,16 +7,21 @@ use App\Models\Document;
 use App\Models\Ownership;
 use App\Models\Tag;
 use App\Services\ArsipDigital\DocumentService;
+use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
+use Filament\Forms\Components\ViewField;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -30,11 +35,11 @@ class DocumentResource extends Resource
 {
     protected static ?string $model = Document::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-document-text';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
 
     protected static ?string $navigationLabel = 'Dokumen';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Arsip';
+    protected static string|\UnitEnum|null $navigationGroup = 'Arsip';
 
     protected static ?int $navigationSort = 1;
 
@@ -83,7 +88,7 @@ class DocumentResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            \Filament\Forms\Components\Radio::make('source_mode')
+            Radio::make('source_mode')
                 ->label('Jenis Unggahan')
                 ->options([
                     Document::SOURCE_FILE => 'Unggah Berkas',
@@ -103,16 +108,16 @@ class DocumentResource extends Resource
                 ->acceptedFileTypes(self::acceptedMimeTypes())
                 ->maxSize(config('arsip.max_upload_kb'))
                 ->visibleOn('create')
-                ->visible(fn (\Filament\Schemas\Components\Utilities\Get $get): bool => $get('source_mode') !== Document::SOURCE_URL)
-                ->required(fn (\Filament\Schemas\Components\Utilities\Get $get): bool => $get('source_mode') !== Document::SOURCE_URL),
+                ->visible(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL)
+                ->required(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL),
 
-            \Filament\Forms\Components\Textarea::make('urls')
+            Textarea::make('urls')
                 ->label('Tautan Dokumen')
                 ->helperText('Satu URL per baris (boleh banyak baris sekaligus). Judul tiap tautan mengikuti segmen terakhir URL bila judul dikosongkan.')
                 ->rows(5)
                 ->visibleOn('create')
-                ->visible(fn (\Filament\Schemas\Components\Utilities\Get $get): bool => $get('source_mode') === Document::SOURCE_URL)
-                ->required(fn (\Filament\Schemas\Components\Utilities\Get $get): bool => $get('source_mode') === Document::SOURCE_URL),
+                ->visible(fn (Get $get): bool => $get('source_mode') === Document::SOURCE_URL)
+                ->required(fn (Get $get): bool => $get('source_mode') === Document::SOURCE_URL),
 
             TextInput::make('title')
                 ->label('Judul Dokumen')
@@ -120,7 +125,7 @@ class DocumentResource extends Resource
                 ->maxLength(255)
                 ->visibleOn(['create', 'edit']),
 
-            \Filament\Forms\Components\ViewField::make('file_list')
+            ViewField::make('file_list')
                 ->view('filament.arsip.forms.file-list')
                 ->label('Berkas Dokumen')
                 ->dehydrated(false)
@@ -299,7 +304,7 @@ class DocumentResource extends Resource
                     ->native(false),
             ])
             ->recordActions([
-                \Filament\Actions\Action::make('buka')
+                Action::make('buka')
                     ->label('Buka')
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (Document $record): string => $record->openUrl())
@@ -335,17 +340,17 @@ class DocumentResource extends Resource
             // 1. Dokumen yang diunggah oleh user ini sendiri (bisa lihat status apa pun)
             $q->where('created_by', $user->id)
               // 2. Dokumen terbit (published) yang berada di bawah ownership user atau dokumen umum (null)
-              ->orWhere(function (Builder $sub) use ($userOwnershipIds): void {
-                  $sub->where('status', Document::STATUS_PUBLISHED)
-                      ->where(function (Builder $ownerQ) use ($userOwnershipIds): void {
-                          if (! empty($userOwnershipIds)) {
-                              $ownerQ->whereIn('ownership_id', $userOwnershipIds)
-                                     ->orWhereNull('ownership_id');
-                          } else {
-                              $ownerQ->whereNull('ownership_id');
-                          }
-                      });
-              });
+                ->orWhere(function (Builder $sub) use ($userOwnershipIds): void {
+                    $sub->where('status', Document::STATUS_PUBLISHED)
+                        ->where(function (Builder $ownerQ) use ($userOwnershipIds): void {
+                            if (! empty($userOwnershipIds)) {
+                                $ownerQ->whereIn('ownership_id', $userOwnershipIds)
+                                    ->orWhereNull('ownership_id');
+                            } else {
+                                $ownerQ->whereNull('ownership_id');
+                            }
+                        });
+                });
         });
     }
 
@@ -477,33 +482,12 @@ class DocumentResource extends Resource
     }
 
     /**
-     * Ringkas exception jadi pesan satu-baris yang layak tampil ke user.
-     * Error Google API (HTTP body JSON) dipetakan ke ringkasannya; error
-     * lain dipotong 300 karakter.
+     * Ringkas exception jadi pesan satu-baris yang layak tampil ke user —
+     * error lain dipotong 300 karakter.
      */
     private static function ringkasError(\Throwable $e): string
     {
         $msg = $e->getMessage();
-
-        // Google\Service\Exception membungkus body JSON {"error": {...}}
-        $decoded = json_decode($msg, true);
-        if (is_array($decoded) && isset($decoded['error']['message'])) {
-            $g = $decoded['error'];
-            $ringkas = trim(($g['code'] ?? '').' '.$g['message']);
-
-            // Pesan populer dipetakan ke bahasa awam supaya admin tak harus
-            // mengartikan HTTP 404 mentah Google Drive.
-            if (str_contains($ringkas, 'File not found: .')) {
-                return 'Folder tujuan Google Drive belum diatur (ARSIP_DRIVE_FOLDER_ID kosong di .env). '
-                    .'Minta admin isi ID folder induk Drive.';
-            }
-            if (str_contains($ringkas, 'insufficientPermissions') || ($g['code'] ?? 0) === 403) {
-                return 'Service account tidak punya akses ke folder Drive. '
-                    .'Bagikan folder induk ke email service account dengan hak akses Editor.';
-            }
-
-            return (string) ($g['code'] ?? '').' — '.$g['message'];
-        }
 
         return mb_strlen($msg) > 300 ? mb_substr($msg, 0, 297).'...' : $msg;
     }

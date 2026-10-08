@@ -62,12 +62,8 @@ class ViewDocument extends ViewRecord
                             ->visible(fn (Document $record): bool => $record->isUrl())
                             ->limit(60),
                         TextEntry::make('drive_folder_name')
-                            ->label('Folder Drive')
+                            ->label('Folder Penyimpanan')
                             ->placeholder('— (belum diorganisasi)')
-                            ->url(fn (Document $record): ?string => $record->drive_folder_id
-                                ? "https://drive.google.com/drive/folders/{$record->drive_folder_id}"
-                                : null)
-                            ->openUrlInNewTab()
                             ->visible(fn (Document $record): bool => ! $record->isUrl()),
                         TextEntry::make('creator.nama')->label('Diunggah Oleh')->placeholder('—'),
                         TextEntry::make('verifier.nama')->label('Diverifikasi Oleh')->placeholder('—'),

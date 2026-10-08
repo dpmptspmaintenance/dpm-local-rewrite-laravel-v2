@@ -44,7 +44,7 @@
                             @foreach ($document->files as $file)
                                 <li class="flex items-center justify-between gap-3">
                                     <a href="{{ $file->openUrl() }}" target="_blank" class="text-primary-600 hover:underline dark:text-primary-400">
-                                        {{ $file->original_filename ?? $file->google_file_id }}
+                                        {{ $file->original_filename ?: basename((string) $file->storage_path) }}
                                     </a>
                                     <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                                         {{ strtoupper($file->file_extension ?? '—') }} · {{ number_format(($file->file_size ?? 0) / 1024, 1, ',', '.') }} KB
@@ -65,7 +65,7 @@
                     icon="heroicon-o-arrow-top-right-on-square"
                     class="mt-4"
                 >
-                    {{ $document->isUrl() ? 'Buka di Tab Baru' : 'Buka Folder Drive' }}
+                    {{ $document->isUrl() ? 'Buka di Tab Baru' : 'Buka Berkas' }}
                 </x-filament::button>
             </x-filament::section>
 

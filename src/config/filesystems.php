@@ -38,6 +38,15 @@ return [
             'report' => false,
         ],
 
+        // Disk khusus berkas Arsip Digital (dokumen OPD + arsip pegawai).
+        // Root diambil dari config/arsip.php supaya bisa diarahkan ke volume
+        // mount produksi lewat env ARSIP_LOCAL_ROOT tanpa mengubah kode.
+        'arsip' => [
+            'driver' => 'local',
+            'root' => config('arsip.local_root'),
+            'throw' => true,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

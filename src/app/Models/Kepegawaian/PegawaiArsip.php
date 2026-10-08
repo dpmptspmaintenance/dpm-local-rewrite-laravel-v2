@@ -7,8 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Satu berkas arsip pegawai (SKP, SK Kenaikan Pangkat, SK Jabatan, Foto,
- * Ijazah, dll) — file fisiknya di Google Drive (subfolder "Kepegawaian" di
- * dalam folder induk Arsip Digital), baris ini cuma metadata. Lihat
+ * Ijazah, dll) — file fisiknya di disk lokal (subfolder "Kepegawaian" di
+ * dalam root disk arsip), baris ini cuma metadata. Lihat
  * App\Services\Kepegawaian\PegawaiArsipService.
  */
 class PegawaiArsip extends Model
@@ -24,13 +24,16 @@ class PegawaiArsip extends Model
         return $this->belongsTo(PegawaiProfil::class, 'nip', 'nip');
     }
 
+    /**
+     * URL pratinjau/unduh dari route aplikasi (bukan lagi Google Drive).
+     */
     public function previewUrl(): string
     {
-        return "https://drive.google.com/file/d/{$this->google_file_id}/preview";
+        return route('arsip.berkas.pegawai-arsip', ['pegawaiArsip' => $this->getKey()]);
     }
 
     public function openUrl(): string
     {
-        return $this->google_web_view_link ?: $this->previewUrl();
+        return $this->previewUrl();
     }
 }

@@ -38,11 +38,11 @@ class PegawaiArsipResource extends Resource
 {
     protected static ?string $model = PegawaiArsip::class;
 
-    protected static string | \BackedEnum | null $navigationIcon = 'heroicon-o-archive-box';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
 
     protected static ?string $navigationLabel = 'Arsip Pegawai';
 
-    protected static string | \UnitEnum | null $navigationGroup = 'Pegawai';
+    protected static string|\UnitEnum|null $navigationGroup = 'Pegawai';
 
     protected static ?int $navigationSort = 7;
 
@@ -180,7 +180,7 @@ class PegawaiArsipResource extends Resource
         return ['nip', 'judul', 'kategori'];
     }
 
-    public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
+    public static function getGlobalSearchResultTitle(Model $record): string|Htmlable
     {
         return $record->judul ?? 'Arsip Pegawai';
     }
@@ -257,22 +257,6 @@ class PegawaiArsipResource extends Resource
     private static function ringkasError(\Throwable $e): string
     {
         $msg = $e->getMessage();
-
-        $decoded = json_decode($msg, true);
-        if (is_array($decoded) && isset($decoded['error']['message'])) {
-            $g = $decoded['error'];
-            $ringkas = trim(($g['code'] ?? '').' '.$g['message']);
-
-            if (str_contains($ringkas, 'File not found: .')) {
-                return 'Folder induk Google Drive belum diatur (ARSIP_DRIVE_FOLDER_ID kosong di .env). '
-                    .'Minta admin isi ID folder induk Drive.';
-            }
-            if (str_contains($ringkas, 'insufficientPermissions') || ($g['code'] ?? 0) === 403) {
-                return 'Akun Drive tidak punya akses ke folder induk. Cek konfigurasi ARSIP_DRIVE_* di .env.';
-            }
-
-            return (string) ($g['code'] ?? '').' — '.$g['message'];
-        }
 
         return mb_strlen($msg) > 300 ? mb_substr($msg, 0, 297).'...' : $msg;
     }

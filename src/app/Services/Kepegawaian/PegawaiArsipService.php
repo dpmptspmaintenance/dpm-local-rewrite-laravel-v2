@@ -5,53 +5,53 @@ namespace App\Services\Kepegawaian;
 use App\Models\Kepegawaian\PegawaiArsip;
 use App\Models\Kepegawaian\PegawaiProfil;
 use App\Models\User;
-use App\Services\ArsipDigital\GoogleDriveService;
-use Illuminate\Database\Eloquent\Collection;
+use App\Services\ArsipDigital\LocalArsipStorage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Orkestrasi upload/hapus arsip berkas pegawai. Reuse GoogleDriveService yang
- * sama dipakai modul Arsip Digital (/arsip) — bukan kredensial/Service Account
- * baru — tapi lewat subfolder "Kepegawaian" tersendiri di dalam folder induk
- * arsip (ARSIP_DRIVE_FOLDER_ID), supaya berkas pegawai tidak bercampur dengan
- * dokumen OPD umum di modul /arsip.
+ * Orkestrasi upload/hapus arsip berkas pegawai. Reuse LocalArsipStorage yang
+ * sama dipakai modul Arsip Digital (/arsip) — bukan penyimpanan kedua — tapi
+ * lewat subfolder "Kepegawaian" tersendiri di dalam root disk arsip, supaya
+ * berkas pegawai tidak bercampur dengan dokumen OPD umum di modul /arsip.
  *
- * Struktur folder Drive: {ARSIP_DRIVE_FOLDER_ID}/Kepegawaian/{NIP - Nama}/
+ * Struktur folder disk: {ARSIP_LOCAL_ROOT}/Kepegawaian/{NIP - Nama}/
  * — satu subfolder per pegawai, dibuat sekali (lazy, saat berkas pertama
- * pegawai itu diunggah) lalu ID-nya di-cache (folder Drive tak pernah
- * berubah untuk NIP yang sama, cache permanen sampai manual di-flush).
+ * pegawai itu diunggah) lalu path-nya di-cache (folder tak berpindah untuk
+ * NIP yang sama; cache diberi TTL agar perbaikan/pemindahan folder manual
+ * tidak tertahan permanen).
  */
 class PegawaiArsipService
 {
-    private const CACHE_ROOT = 'arsip-kepegawaian:root-folder-id';
+    private const CACHE_ROOT = 'arsip-kepegawaian:root-folder-path';
 
-    private const CACHE_PEGAWAI_PREFIX = 'arsip-kepegawaian:pegawai-folder-id:';
+    private const CACHE_PEGAWAI_PREFIX = 'arsip-kepegawaian:pegawai-folder-path:';
 
-    public function __construct(private readonly GoogleDriveService $drive) {}
+    private const CACHE_TTL_DAYS = 7;
+
+    public function __construct(private readonly LocalArsipStorage $drive) {}
 
     /**
-     * Unggah satu berkas untuk satu pegawai: kirim ke Drive dulu (folder
-     * khusus pegawai itu), baru catat metadata. Kalau Drive gagal, tak ada
-     * baris DB yang dibuat. Kalau DB gagal SETELAH Drive sukses, berkas yang
-     * baru terunggah dihapus lagi dari Drive — pola sama seperti
+     * Unggah satu berkas untuk satu pegawai: tulis ke disk dulu (folder
+     * khusus pegawai itu), baru catat metadata. Kalau disk gagal, tak ada
+     * baris DB yang dibuat. Kalau DB gagal SETELAH berkas tersimpan, berkas
+     * yang baru tersimpan dihapus lagi dari disk — pola sama seperti
      * App\Services\ArsipDigital\DocumentService::upload().
      *
      * @param  array{path: string, filename: string, mime: string, extension: string, size: int}  $file
      */
     public function upload(string $nip, array $file, User $uploader, ?string $judul, ?string $kategori): PegawaiArsip
     {
-        $folderId = $this->pegawaiFolderId($nip);
+        $folderPath = $this->pegawaiFolderId($nip);
 
-        $uploaded = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $folderId);
+        $uploaded = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $folderPath);
 
         try {
             return PegawaiArsip::create([
                 'nip' => $nip,
                 'judul' => filled($judul) ? $judul : pathinfo($file['filename'], PATHINFO_FILENAME),
                 'kategori' => filled($kategori) ? trim($kategori) : null,
-                'google_file_id' => $uploaded['id'],
-                'google_web_view_link' => $uploaded['webViewLink'],
+                'storage_path' => $uploaded['id'],
                 'original_filename' => $file['filename'],
                 'file_extension' => $file['extension'],
                 'mime_type' => $file['mime'],
@@ -61,7 +61,7 @@ class PegawaiArsipService
             ]);
         } catch (\Throwable $e) {
             $this->drive->delete($uploaded['id']);
-            Log::error('[arsip-kepegawaian] upload dibatalkan, file Drive dihapus: '.$e->getMessage());
+            Log::error('[arsip-kepegawaian] upload dibatalkan, berkas disk dihapus: '.$e->getMessage());
 
             throw $e;
         }
@@ -69,7 +69,10 @@ class PegawaiArsipService
 
     public function delete(PegawaiArsip $arsip): void
     {
-        $this->drive->delete($arsip->google_file_id);
+        if ($arsip->storage_path) {
+            $this->drive->delete($arsip->storage_path);
+        }
+
         $arsip->delete();
     }
 
@@ -92,13 +95,14 @@ class PegawaiArsipService
     }
 
     /**
-     * ID subfolder Drive khusus satu pegawai (dibuat sekali, lazy). Nama
-     * folder "{NIP} - {Nama}" — hasilnya di-cache permanen per NIP karena
-     * folder Drive tidak pernah pindah/berubah ID untuk pegawai yang sama.
+     * Path subfolder disk khusus satu pegawai (dibuat sekali, lazy). Nama
+     * folder "{NIP} - {Nama}" — hasilnya di-cache per NIP dengan TTL karena
+     * folder tak berpindah untuk pegawai yang sama, tapi TTL mencegah path
+     * basi tertahan permanen bila folder dipindah/rename manual.
      */
     private function pegawaiFolderId(string $nip): string
     {
-        return Cache::rememberForever(self::CACHE_PEGAWAI_PREFIX.$nip, function () use ($nip): string {
+        return Cache::remember(self::CACHE_PEGAWAI_PREFIX.$nip, now()->addDays(self::CACHE_TTL_DAYS), function () use ($nip): string {
             $root = $this->rootFolderId();
             $nama = PegawaiProfil::query()->where('nip', $nip)->value('nama') ?: $nip;
             $folderName = "{$nip} - {$nama}";
@@ -108,12 +112,12 @@ class PegawaiArsipService
     }
 
     /**
-     * ID subfolder "Kepegawaian" di dalam folder induk arsip
-     * (ARSIP_DRIVE_FOLDER_ID) — dibuat sekali, lazy, lalu di-cache permanen.
+     * Path subfolder "Kepegawaian" di dalam root disk arsip
+     * (ARSIP_LOCAL_ROOT) — dibuat sekali, lazy, lalu di-cache dengan TTL.
      */
     private function rootFolderId(): string
     {
-        return Cache::rememberForever(self::CACHE_ROOT, fn (): string => $this->drive->findOrCreateFolder(
+        return Cache::remember(self::CACHE_ROOT, now()->addDays(self::CACHE_TTL_DAYS), fn (): string => $this->drive->findOrCreateFolder(
             'Kepegawaian',
             $this->drive->rootFolderId(),
         ));

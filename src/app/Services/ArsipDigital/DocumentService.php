@@ -11,22 +11,22 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Orkestrasi unggah/verifikasi dokumen — satu-satunya tempat yang boleh
- * menulis ke tabel documents / document_files + memanggil GoogleDriveService
+ * menulis ke tabel documents / document_files + memanggil LocalArsipStorage
  * bersamaan. Lihat AGENTS.md § 5: transaksi database wajib aman terhadap
- * kegagalan salah satu sisi (Drive vs DB).
+ * kegagalan salah satu sisi (storage vs DB).
  *
  * Model list flat: dokumen = metadata (judul/dll), berkas fisik = baris
  * document_files. Tidak ada konsep "berkas utama" — semua setara.
  */
 class DocumentService
 {
-    public function __construct(private readonly GoogleDriveService $drive) {}
+    public function __construct(private readonly LocalArsipStorage $drive) {}
 
     /**
-     * Unggah satu berkas: kirim ke Drive dulu, lalu catat metadata di DB.
-     * Kalau upload Drive gagal, tidak ada baris DB yang pernah dibuat. Kalau
-     * penyimpanan DB gagal SETELAH upload Drive sukses, berkas yang baru
-     * terunggah dihapus lagi dari Drive.
+     * Unggah satu berkas: tulis ke disk dulu, lalu catat metadata di DB.
+     * Kalau tulis disk gagal, tidak ada baris DB yang pernah dibuat. Kalau
+     * penyimpanan DB gagal SETELAH berkas tersimpan, berkas yang baru
+     * tersimpan dihapus lagi dari disk.
      *
      * @param  array{path: string, filename: string, mime: string, extension: string, size: int}  $file
      * @param  list<string>  $tagNames
@@ -47,8 +47,7 @@ class DocumentService
                 ]);
 
                 $document->files()->create([
-                    'google_file_id' => $uploaded['id'],
-                    'google_web_view_link' => $uploaded['webViewLink'],
+                    'storage_path' => $uploaded['id'],
                     'original_filename' => $file['filename'],
                     'file_extension' => $file['extension'],
                     'mime_type' => $file['mime'],
@@ -61,7 +60,7 @@ class DocumentService
             });
         } catch (\Throwable $e) {
             $this->drive->delete($uploaded['id']);
-            Log::error('[arsip] upload dibatalkan, file Drive dihapus: '.$e->getMessage());
+            Log::error('[arsip] upload dibatalkan, berkas disk dihapus: '.$e->getMessage());
 
             throw $e;
         }
@@ -147,6 +146,10 @@ class DocumentService
      * ke sana. Dipanggil dari approve(), moveFileTo(), dan EditDocument.
      * Idempoten: folder tidak dibuat ulang bila sudah ada; berkas yang
      * ditambahkan belakangan tetap ikut dipindah.
+     *
+     * Berbeda dari Drive (id berkas stabil walau pindah folder), di disk
+     * lokal path = identitas berkas, jadi storage_path WAJIB ikut di-update
+     * setiap kali berkas dipindah.
      */
     public function organizeOnPublish(Document $document): void
     {
@@ -155,20 +158,28 @@ class DocumentService
         }
 
         try {
-            $folderId = $document->drive_folder_id;
+            $folderPath = $document->drive_folder_id;
 
-            if (! $folderId) {
+            if (! $folderPath) {
                 $folderName = $document->folderName();
-                $folderId = $this->drive->createFolder($folderName, $this->drive->rootFolderId());
+                $folderPath = $this->drive->createFolder($folderName, $this->drive->rootFolderId());
 
                 $document->update([
-                    'drive_folder_id' => $folderId,
+                    'drive_folder_id' => $folderPath,
                     'drive_folder_name' => $folderName,
                 ]);
             }
 
             foreach ($document->files as $file) {
-                $this->drive->moveFile($file->google_file_id, $folderId);
+                if (! $file->storage_path) {
+                    continue;
+                }
+
+                $newPath = $this->drive->moveFile($file->storage_path, $folderPath);
+
+                if ($newPath !== $file->storage_path) {
+                    $file->update(['storage_path' => $newPath]);
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('[arsip] organizeOnPublish gagal, sebagian berkas mungkin masih di folder etc', [
@@ -179,8 +190,10 @@ class DocumentService
     }
 
     /**
-     * Sinkronkan nama folder Drive ke judul dokumen saat judul berubah
-     * ("ketika judul di edit maka di google drive juga rename").
+     * Sinkronkan nama folder (kini folder disk lokal) ke judul dokumen saat
+     * judul berubah ("ketika judul di edit maka folder juga rename").
+     * Rename folder menggeser seluruh isi, jadi storage_path tiap berkas
+     * ikut diperbarui (prefix lama → prefix baru).
      */
     public function syncDriveNames(Document $document): void
     {
@@ -191,10 +204,25 @@ class DocumentService
         try {
             $newFolderName = $document->folderName();
 
-            if ($newFolderName !== $document->drive_folder_name) {
-                $this->drive->rename($document->drive_folder_id, $newFolderName);
-                $document->update(['drive_folder_name' => $newFolderName]);
+            if ($newFolderName === $document->drive_folder_name) {
+                return;
             }
+
+            $oldFolderPath = $document->drive_folder_id;
+            $newFolderPath = $this->drive->rename($oldFolderPath, $newFolderName);
+
+            foreach ($document->files as $file) {
+                if ($file->storage_path && str_starts_with($file->storage_path, $oldFolderPath.'/')) {
+                    $file->update([
+                        'storage_path' => $newFolderPath.substr($file->storage_path, strlen($oldFolderPath)),
+                    ]);
+                }
+            }
+
+            $document->update([
+                'drive_folder_id' => $newFolderPath,
+                'drive_folder_name' => $newFolderName,
+            ]);
         } catch (\Throwable $e) {
             Log::warning('[arsip] syncDriveNames gagal, nama folder dibiarkan', [
                 'document_id' => $document->id,
@@ -241,7 +269,10 @@ class DocumentService
      */
     public function removeFile(DocumentFile $file): void
     {
-        $this->drive->delete($file->google_file_id);
+        if ($file->storage_path) {
+            $this->drive->delete($file->storage_path);
+        }
+
         $file->delete();
     }
 
@@ -270,8 +301,7 @@ class DocumentService
                 }
 
                 $document->files()->create([
-                    'google_file_id' => $uploaded['id'],
-                    'google_web_view_link' => $uploaded['webViewLink'],
+                    'storage_path' => $uploaded['id'],
                     'original_filename' => $file['filename'],
                     'file_extension' => $file['extension'],
                     'mime_type' => $file['mime'],
@@ -279,7 +309,7 @@ class DocumentService
                 ]);
             } catch (\Throwable $e) {
                 $this->drive->delete($uploaded['id']);
-                Log::error('[arsip] addFiles gagal mencatat metadata, berkas Drive dihapus: '.$e->getMessage());
+                Log::error('[arsip] addFiles gagal mencatat metadata, berkas disk dihapus: '.$e->getMessage());
 
                 throw $e;
             }
@@ -304,16 +334,22 @@ class DocumentService
     }
 
     /**
-     * Hapus dokumen: seluruh berkas Drive (semua baris document_files)
+     * Hapus dokumen: seluruh berkas fisik (semua baris document_files)
      * dihapus dulu (best-effort, tidak menggagalkan penghapusan baris DB bila
-     * sebagian file sudah tidak ada di Drive), baru baris DB (cascade juga
-     * menghapus document_files).
+     * sebagian berkas sudah tidak ada), baru baris DB (cascade juga menghapus
+     * document_files).
      */
     public function delete(Document $document): void
     {
         if (! $document->isUrl()) {
             foreach ($document->files as $file) {
-                $this->drive->delete($file->google_file_id);
+                if ($file->storage_path) {
+                    $this->drive->delete($file->storage_path);
+                }
+            }
+
+            if ($document->drive_folder_id) {
+                $this->drive->deleteDirectory($document->drive_folder_id);
             }
         }
 
