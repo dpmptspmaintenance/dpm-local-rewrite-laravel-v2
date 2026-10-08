@@ -109,7 +109,7 @@ class DocumentResource extends Resource
                 ->maxSize(config('arsip.max_upload_kb'))
                 ->visibleOn('create')
                 ->visible(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL)
-                ->required(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL),
+                ->required(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') !== Document::SOURCE_URL),
 
             Textarea::make('urls')
                 ->label('Tautan Dokumen')
@@ -117,7 +117,7 @@ class DocumentResource extends Resource
                 ->rows(5)
                 ->visibleOn('create')
                 ->visible(fn (Get $get): bool => $get('source_mode') === Document::SOURCE_URL)
-                ->required(fn (Get $get): bool => $get('source_mode') === Document::SOURCE_URL),
+                ->required(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') === Document::SOURCE_URL),
 
             TextInput::make('title')
                 ->label('Judul Dokumen')
@@ -133,8 +133,8 @@ class DocumentResource extends Resource
                 ->visible(fn (?Document $record): bool => $record !== null && ! $record->isUrl()),
 
             FileUpload::make('new_files')
-                ->label('Tambah Berkas')
-                ->helperText(fn (): string => 'Berkas baru langsung ditambahkan ke dokumen ini setelah disimpan. Maks '.config('arsip.max_upload_kb').' KB. Format: '.implode(', ', config('arsip.allowed_extensions')))
+                ->label('Tambah Berkas (opsional)')
+                ->helperText(fn (): string => 'Opsional — kosongkan bila tidak menambah berkas baru; berkas lama tetap utuh. Berkas baru langsung ditambahkan setelah disimpan. Maks '.config('arsip.max_upload_kb').' KB. Format: '.implode(', ', config('arsip.allowed_extensions')))
                 ->multiple()
                 ->storeFiles(false)
                 ->acceptedFileTypes(self::acceptedMimeTypes())
