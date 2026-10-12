@@ -109,6 +109,17 @@ class PegawaiProfil extends Model
         return $this->hasMany(PegawaiRiwayatJabatan::class, 'nip', 'nip')->orderBy('no_urut');
     }
 
+    /**
+     * Baris riwayat jabatan terakhir (TMT SK paling baru) — dipakai untuk
+     * menentukan jalur karier (struktural/fungsional/pelaksana) dari
+     * jenis_jabatan. latestOfMany() aman untuk baris tanpa TMT karena jatuh
+     * ke urutan default.
+     */
+    public function riwayatJabatanTerakhir(): HasOne
+    {
+        return $this->hasOne(PegawaiRiwayatJabatan::class, 'nip', 'nip')->latestOfMany('tmt_sk_jabatan');
+    }
+
     public function riwayatPangkat(): HasMany
     {
         return $this->hasMany(PegawaiRiwayatPangkat::class, 'nip', 'nip')->orderBy('no_urut');
@@ -283,6 +294,45 @@ class PegawaiProfil extends Model
         }
 
         return intdiv($totalBulan, 12).' tahun '.($totalBulan % 12).' bulan';
+    }
+
+    /**
+     * Apakah pegawai ini PPPK (penuh atau paruh waktu)?
+     */
+    public function isPppk(): bool
+    {
+        return in_array($this->status_pegawai, self::STATUS_NON_PNS, true);
+    }
+
+    /**
+     * Masa kerja "X tahun Y bulan" generik — dipakai kolom "Masa Kerja" di
+     * daftar/tabel pegawai.
+     *
+     * PNS: dihitung dari TMT pengangkatan pada NIP (digit ke-9..14).
+     * PPPK: NIP memakai segmen YYYYMM yang BUKAN tanggal (kode periode PPPK,
+     * mis. selalu '21'), jadi masa kerja dihitung dari TMT awal yang tersimpan
+     * di kolom tmt_golongan (TMT pengangkatan PPPK — sama dengan TMT golongan
+     * pertama karena PPPK tak punya riwayat CPNS/jabatan).
+     */
+    public function masaKerjaTeks(): ?string
+    {
+        if ($this->isPppk()) {
+            if (! $this->tmt_golongan) {
+                return null;
+            }
+
+            $now = now();
+            $tmt = \Carbon\Carbon::parse($this->tmt_golongan);
+            $totalBulan = (($now->year - $tmt->year) * 12) + ($now->month - $tmt->month);
+
+            if ($totalBulan < 0) {
+                return null;
+            }
+
+            return intdiv($totalBulan, 12).' tahun '.($totalBulan % 12).' bulan';
+        }
+
+        return self::masaKerjaDariNip((string) $this->nip);
     }
 
     /**

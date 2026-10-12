@@ -209,7 +209,7 @@ class PegawaiProfilResource extends Resource
                     ->placeholder('—'),
                 TextColumn::make('masa_kerja_cpns')
                     ->label('Masa Kerja')
-                    ->state(fn (PegawaiProfil $record): ?string => PegawaiProfil::masaKerjaDariNip((string) $record->nip))
+                    ->state(fn (PegawaiProfil $record): ?string => $record->masaKerjaTeks())
                     ->placeholder('—')
                     ->toggleable(),
                 TextColumn::make('masa_kerja_duk')
