@@ -74,6 +74,74 @@ class DocumentService
     }
 
     /**
+     * Buat SATU dokumen dengan beberapa berkas fisik sekaligus (konsep
+     * repeater "Tambah Berkas" — mirip Surat Tugas: satu induk, banyak baris
+     * anak). Semua berkas diunggah ke disk dulu; bila ada yang gagal, berkas
+     * yang sudah terunggah dihapus lagi (tak ada baris DB yang tertinggal).
+     * Kalau penyimpanan DB gagal setelah semua berkas terunggah, seluruh
+     * berkas yang baru di-upload dihapus lagi.
+     *
+     * @param  list<array{path: string, filename: string, mime: string, extension: string, size: int}>  $files
+     * @param  list<string>  $tagNames
+     */
+    public function createWithFiles(array $files, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null): Document
+    {
+        $folderId = $this->pendingFolderForYear(now()->year);
+        $uploaded = [];
+
+        try {
+            foreach ($files as $file) {
+                $uploaded[] = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $folderId);
+            }
+        } catch (\Throwable $e) {
+            foreach ($uploaded as $u) {
+                $this->drive->delete($u['id']);
+            }
+
+            Log::error('[arsip] createWithFiles dibatalkan, berkas disk dihapus: '.$e->getMessage());
+
+            throw $e;
+        }
+
+        try {
+            return DB::transaction(function () use ($files, $uploaded, $uploader, $categoryId, $title, $tagNames, $ownershipId): Document {
+                $firstFilename = $files[0]['filename'] ?? 'dokumen';
+
+                $document = Document::create([
+                    'title' => filled($title) ? $title : Document::fallbackTitle($firstFilename),
+                    'source_type' => Document::SOURCE_FILE,
+                    'status' => Document::STATUS_PENDING,
+                    'category_id' => $categoryId,
+                    'ownership_id' => $ownershipId,
+                    'created_by' => $uploader->id,
+                ]);
+
+                foreach ($files as $i => $file) {
+                    $document->files()->create([
+                        'storage_path' => $uploaded[$i]['id'],
+                        'original_filename' => $file['filename'],
+                        'file_extension' => $file['extension'],
+                        'mime_type' => $file['mime'],
+                        'file_size' => $file['size'],
+                    ]);
+                }
+
+                $document->tags()->sync($this->resolveTags($tagNames));
+
+                return $document;
+            });
+        } catch (\Throwable $e) {
+            foreach ($uploaded as $u) {
+                $this->drive->delete($u['id']);
+            }
+
+            Log::error('[arsip] createWithFiles gagal catat DB, berkas disk dihapus: '.$e->getMessage());
+
+            throw $e;
+        }
+    }
+
+    /**
      * Daftarkan satu dokumen berbasis tautan (Google Drive / web) — TIDAK ada
      * berkas fisik yang diunggah; baris cuma menyimpan referensi URL. Ikut
      * alur verifikasi sama seperti berkas (status awal pending_review).

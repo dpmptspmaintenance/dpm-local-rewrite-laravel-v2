@@ -37,23 +37,38 @@ class CreateDocument extends CreateRecord
                 ->all();
 
             $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service, $ownershipId);
-        } else {
-            $result = DocumentResource::uploadBatch($data['files'] ?? [], $title, $categoryId, $tagNames, $service, $ownershipId);
+
+            if ($result['ids'] === []) {
+                throw new \RuntimeException(
+                    "Tidak ada dokumen yang berhasil didaftarkan.\n\n".implode("\n", $result['errors'])
+                );
+            }
+
+            return DocumentResource::getModel()::findOrFail($result['ids'][0]);
         }
 
-        if ($result['ids'] === []) {
-            // Tampilkan error asli yang sudah diringkas uploadBatch, jangan
-            // pesan generik — user perlu tahu akar masalahnya (mis. folder
-            // Drive belum diatur), bukan cuma "gagal".
-            throw new \RuntimeException(
-                "Tidak ada dokumen yang berhasil diunggah.\n\n".implode("\n", $result['errors'])
-            );
+        // Mode berkas: satu DOKUMEN dengan banyak baris berkas (repeater
+        // "Tambah Berkas" — konsep sama Surat Tugas: satu induk, banyak anak).
+        $files = collect($data['berkas'] ?? [])
+            ->pluck('file')
+            ->filter()
+            ->map(fn ($file): array => [
+                'path' => $file->getRealPath(),
+                'filename' => $file->getClientOriginalName(),
+                'mime' => $file->getMimeType() ?: 'application/octet-stream',
+                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
+                'size' => (int) $file->getSize(),
+            ])
+            ->values()
+            ->all();
+
+        if ($files === []) {
+            throw new \RuntimeException('Pilih minimal satu berkas untuk diunggah.');
         }
 
-        // Return dokumen pertama supaya Filament punya record untuk redirect
-        // ke halaman view/edit standar. Untuk batch, ini memang cuma salah
-        // satu dari banyak dokumen; user bisa kembali ke daftar.
-        return DocumentResource::getModel()::findOrFail($result['ids'][0]);
+        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId);
+
+        return $document;
     }
 
     protected function getRedirectUrl(): string

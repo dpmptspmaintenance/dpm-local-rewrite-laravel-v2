@@ -35,8 +35,7 @@ class EditDocument extends EditRecord
         // panggilan DocumentService), bukan kolom langsung pada model documents.
         unset(
             $data['tag_names'],
-            $data['files'],
-            $data['new_files'],
+            $data['new_berkas'],
         );
 
         return $data;
@@ -73,22 +72,25 @@ class EditDocument extends EditRecord
             $service->organizeOnPublish($record);
         }
 
-        // Berkas baru yang dipilih lewat field "Tambah Berkas" — diunggah
+        // Berkas baru yang dipilih lewat repeater "Tambah Berkas" — diunggah
         // sekarang (bukan sebelum record tersimpan, supaya kalau upload
         // gagal, sisa perubahan form tetap tersimpan).
-        $newFiles = $this->data['new_files'] ?? [];
+        $newBerkas = $this->data['new_berkas'] ?? [];
 
-        if ($newFiles !== []) {
-            $meta = collect($newFiles)
-                ->map(fn ($file): array => [
-                    'path' => $file->getRealPath(),
-                    'filename' => $file->getClientOriginalName(),
-                    'mime' => $file->getMimeType() ?: 'application/octet-stream',
-                    'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
-                    'size' => (int) $file->getSize(),
-                ])
-                ->all();
+        $meta = collect($newBerkas)
+            ->pluck('file')
+            ->filter()
+            ->map(fn ($file): array => [
+                'path' => $file->getRealPath(),
+                'filename' => $file->getClientOriginalName(),
+                'mime' => $file->getMimeType() ?: 'application/octet-stream',
+                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
+                'size' => (int) $file->getSize(),
+            ])
+            ->values()
+            ->all();
 
+        if ($meta !== []) {
             try {
                 $service->addFiles($record, $meta);
 
@@ -107,7 +109,7 @@ class EditDocument extends EditRecord
 
             // Reset field upload supaya tidak ke-submit ulang bila user
             // menyimpan form lagi tanpa refresh halaman.
-            $this->data['new_files'] = [];
+            $this->data['new_berkas'] = [];
         }
     }
 

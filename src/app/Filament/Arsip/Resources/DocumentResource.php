@@ -13,6 +13,7 @@ use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
@@ -100,13 +101,21 @@ class DocumentResource extends Resource
                 ->dehydrated(false) // bukan kolom DB — hanya penggerak visibilitas field
                 ->visibleOn('create'),
 
-            FileUpload::make('files')
+            Repeater::make('berkas')
                 ->label('Berkas')
-                ->helperText(fn (): string => 'Maks '.config('arsip.max_upload_kb').' KB. Format: '.implode(', ', config('arsip.allowed_extensions')))
-                ->multiple()
-                ->storeFiles(false)
-                ->acceptedFileTypes(self::acceptedMimeTypes())
-                ->maxSize(config('arsip.max_upload_kb'))
+                ->helperText(fn (): string => 'Tekan "Tambah Berkas" untuk menambah berkas lain. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
+                ->addActionLabel('Tambah Berkas')
+                ->reorderable()
+                ->minItems(1)
+                ->defaultItems(1)
+                ->schema([
+                    FileUpload::make('file')
+                        ->label('Berkas')
+                        ->storeFiles(false)
+                        ->acceptedFileTypes(self::acceptedMimeTypes())
+                        ->maxSize(config('arsip.max_upload_kb'))
+                        ->required(),
+                ])
                 ->visibleOn('create')
                 ->visible(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL)
                 ->required(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') !== Document::SOURCE_URL),
@@ -132,13 +141,18 @@ class DocumentResource extends Resource
                 ->visibleOn('edit')
                 ->visible(fn (?Document $record): bool => $record !== null && ! $record->isUrl()),
 
-            FileUpload::make('new_files')
+            Repeater::make('new_berkas')
                 ->label('Tambah Berkas (opsional)')
                 ->helperText(fn (): string => 'Opsional — kosongkan bila tidak menambah berkas baru; berkas lama tetap utuh. Berkas baru langsung ditambahkan setelah disimpan. Maks '.config('arsip.max_upload_kb').' KB. Format: '.implode(', ', config('arsip.allowed_extensions')))
-                ->multiple()
-                ->storeFiles(false)
-                ->acceptedFileTypes(self::acceptedMimeTypes())
-                ->maxSize(config('arsip.max_upload_kb'))
+                ->addActionLabel('Tambah Berkas')
+                ->schema([
+                    FileUpload::make('file')
+                        ->label('Berkas')
+                        ->storeFiles(false)
+                        ->acceptedFileTypes(self::acceptedMimeTypes())
+                        ->maxSize(config('arsip.max_upload_kb'))
+                        ->required(),
+                ])
                 ->visibleOn('edit')
                 ->visible(fn (?Document $record): bool => $record !== null && ! $record->isUrl()),
 
@@ -365,69 +379,9 @@ class DocumentResource extends Resource
     }
 
     /**
-     * Proses upload batch dipanggil dari CreateDocument. Setiap berkas
-     * diteruskan ke DocumentService; kegagalan satu tidak membatalkan
-     * berkas lain, tapi tetap mengembalikan notifikasi ringkasan.
-     *
-     * @param  list<string>  $tagNames
-     * @return array{ids: list<int>, errors: list<string>}
-     */
-    public static function uploadBatch(array $files, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null): array
-    {
-        $createdIds = [];
-        $errors = [];
-        $multiple = count($files) > 1;
-        $user = Auth::user();
-
-        foreach ($files as $index => $file) {
-            $fileTitle = ($multiple || blank($title)) ? null : $title;
-
-            $meta = [
-                'path' => $file->getRealPath(),
-                'filename' => $file->getClientOriginalName(),
-                'mime' => $file->getMimeType() ?: 'application/octet-stream',
-                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
-                'size' => (int) $file->getSize(),
-            ];
-
-            try {
-                $createdIds[] = $service->upload($meta, $user, $categoryId, $fileTitle, $tagNames, $ownershipId)->id;
-            } catch (\Throwable $e) {
-                $name = $file->getClientOriginalName();
-                $errors[] = "{$name}: ".self::ringkasError($e);
-                Log::error('[arsip] batch upload gagal untuk '.$name.': '.$e->getMessage());
-            }
-        }
-
-        if ($errors !== []) {
-            Notification::make()
-                ->title('Sebagian berkas gagal diunggah')
-                ->body(implode("\n", $errors))
-                ->danger()
-                ->persistent()
-                ->send();
-        }
-
-        if ($createdIds !== [] && $errors === []) {
-            Notification::make()
-                ->title(count($createdIds).' dokumen berhasil diunggah')
-                ->body('Dokumen baru masuk status Menunggu Verifikasi.')
-                ->success()
-                ->send();
-        } elseif ($createdIds !== []) {
-            Notification::make()
-                ->title(count($createdIds).' dokumen berhasil, '.count($errors).' gagal')
-                ->warning()
-                ->send();
-        }
-
-        return ['ids' => $createdIds, 'errors' => $errors];
-    }
-
-    /**
      * Daftarkan batch tautan URL (satu baris DB per URL yang valid).
      * Kegagalan satu URL tidak membatalkan yang lain — diringkas di
-     * notifikasi seperti uploadBatch().
+     * notifikasi.
      *
      * @param  list<string>  $urls
      * @param  list<string>  $tagNames
