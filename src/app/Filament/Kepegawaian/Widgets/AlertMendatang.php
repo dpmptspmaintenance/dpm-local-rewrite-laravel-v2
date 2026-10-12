@@ -9,8 +9,11 @@ use Illuminate\Support\Collection;
 
 /**
  * Alert di beranda Kepegawaian: jadwal yang akan jatuh tempo segera —
- * KGB & (perkiraan) kenaikan pangkat 3 bulan mendatang, plus pensiun (BUP)
- * 1 tahun mendatang. Hanya PNS.
+ * KGB 3 bulan mendatang, (perkiraan) kenaikan pangkat 6 bulan mendatang,
+ * plus pensiun (BUP/BUT) 1 tahun mendatang.
+ *
+ * KGB & kenaikan pangkat hanya untuk PNS (PPPK tak punya KGB/pangkat).
+ * Pensiun berlaku untuk SEMUA status ASN: PNS, PPPK, dan PPPK paruh waktu.
  *
  * Kenaikan pangkat reguler diperkirakan 4 tahun dari TMT golongan terakhir
  * (pegawai_profil.tmt_golongan) — data SISDM tak menyimpan "KP selanjutnya",
@@ -25,11 +28,17 @@ class AlertMendatang extends Widget
 
     protected int | string | array $columnSpan = 'full';
 
-    /** Jendela hari ke depan untuk KGB & KP. */
-    private const HARI_KGB_KP = 90;
+    /** Jendela hari ke depan untuk KGB. */
+    private const HARI_KGB = 90;
+
+    /** Jendela hari ke depan untuk kenaikan pangkat. */
+    private const HARI_KP = 180;
 
     /** Tahun kenaikan pangkat reguler dihitung dari TMT golongan terakhir. */
     private const TAHUN_KP_REGULER = 4;
+
+    /** Batas awal baris "terlambat" (tolak est yang jauh di masa lalu). */
+    private const HARI_KP_TERLAMBAT = 90;
 
     /**
      * @return array<string, Collection<int, array<string, mixed>>>
@@ -38,9 +47,14 @@ class AlertMendatang extends Widget
     {
         $pns = PegawaiProfil::query()
             ->where('status_pegawai', PegawaiProfil::STATUS_PNS)
-            ->get(['nip', 'nama', 'jabatan', 'golongan', 'tmt_golongan', 'kgb_selanjutnya', 'tmt_bup_but']);
+            ->get(['nip', 'nama', 'jabatan', 'golongan', 'status_pegawai', 'tmt_golongan', 'kgb_selanjutnya', 'tmt_bup_but']);
 
-        $batasKgbKp = now()->addDays(self::HARI_KGB_KP);
+        $semuaAsn = PegawaiProfil::query()
+            ->whereIn('status_pegawai', [PegawaiProfil::STATUS_PNS, ...PegawaiProfil::STATUS_NON_PNS])
+            ->get(['nip', 'nama', 'jabatan', 'golongan', 'status_pegawai', 'tmt_bup_but']);
+
+        $batasKgb = now()->addDays(self::HARI_KGB);
+        $batasKp = now()->addDays(self::HARI_KP);
         $batasPensiun = now()->addYear();
 
         $kgb = collect();
@@ -50,24 +64,27 @@ class AlertMendatang extends Widget
         foreach ($pns as $p) {
             if ($p->kgb_selanjutnya) {
                 $tgl = Carbon::parse($p->kgb_selanjutnya);
-                if ($tgl->lte($batasKgbKp) && $tgl->gte(now()->startOfDay())) {
+                if ($tgl->lte($batasKgb) && $tgl->gte(now()->startOfDay())) {
                     $kgb->push($this->baris($p, $tgl));
                 }
             }
 
             if ($p->tmt_golongan) {
                 $est = Carbon::parse($p->tmt_golongan)->addYears(self::TAHUN_KP_REGULER);
-                // Hanya estimasi dalam jendela ±3 bulan: yang akan datang
-                // ATAU baru saja terlewat. Est yang jauh di masa lalu
-                // (tmt_golongan basi / pegawai sudah di puncak) sengaja
+                // Hanya estimasi dalam jendela ±: yang akan datang (<=6 bulan)
+                // ATAU baru saja terlewat (<=90 hari). Est yang jauh di masa
+                // lalu (tmt_golongan basi / pegawai sudah di puncak) sengaja
                 // dibuang supaya tak jadi alert lama yang bising.
-                if ($est->lte($batasKgbKp) && $est->gte(now()->subDays(self::HARI_KGB_KP)->startOfDay())) {
+                if ($est->lte($batasKp) && $est->gte(now()->subDays(self::HARI_KP_TERLAMBAT)->startOfDay())) {
                     $kp->push(array_merge($this->baris($p, $est), [
                         'terlambat' => $est->lt(now()->startOfDay()),
                     ]));
                 }
             }
+        }
 
+        // Pensiun/BUP berlaku untuk semua ASN (PNS + PPPK + PPPK paruh waktu).
+        foreach ($semuaAsn as $p) {
             if ($p->tmt_bup_but) {
                 $tgl = Carbon::parse($p->tmt_bup_but);
                 if ($tgl->lte($batasPensiun) && $tgl->gte(now()->startOfDay())) {
@@ -93,9 +110,22 @@ class AlertMendatang extends Widget
             'nama' => $p->nama ?? $p->nip,
             'jabatan' => $p->jabatan,
             'golongan' => $p->golongan,
+            'status_pegawai' => $p->status_pegawai,
+            'status_short' => $this->statusShort($p->status_pegawai),
             'tanggal' => $tanggal,
             'terlambat' => false,
         ];
+    }
+
+    /** Label singkat status pegawai untuk badge di daftar alert. */
+    private function statusShort(?string $status): ?string
+    {
+        return match ($status) {
+            PegawaiProfil::STATUS_PNS => 'PNS',
+            PegawaiProfil::STATUS_PPPK => 'PPPK',
+            PegawaiProfil::STATUS_PPPK_PARUH_WAKTU => 'PPPK PW',
+            default => $status,
+        };
     }
 
     /** Jumlah total alert (dipakai untuk badge tajuk). */

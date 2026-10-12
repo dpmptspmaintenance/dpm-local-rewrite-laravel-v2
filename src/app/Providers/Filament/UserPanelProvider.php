@@ -40,6 +40,7 @@ class UserPanelProvider extends PanelProvider
             ->id('user')
             ->path('user')
             ->brandName('User Management — DPMPTSP')
+            ->favicon(asset('favicon.ico').'?v=2')
             ->colors([
                 'primary' => Color::Blue,
             ])

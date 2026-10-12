@@ -39,6 +39,7 @@ class KepegawaianPanelProvider extends PanelProvider
             ->id('kepegawaian')
             ->path('kepegawaian')
             ->brandName('Kepegawaian — DPMPTSP')
+            ->favicon(asset('favicon.ico').'?v=2')
             ->colors([
                 'primary' => Color::Blue,
             ])

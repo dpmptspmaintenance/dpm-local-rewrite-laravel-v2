@@ -41,6 +41,7 @@ class ArsipPanelProvider extends PanelProvider
             ->id('arsip')
             ->path('arsip')
             ->brandName('Arsip Digital — DPMPTSP')
+            ->favicon(asset('favicon.ico').'?v=2')
             ->colors([
                 'primary' => Color::Amber,
             ])

@@ -216,6 +216,15 @@ class PegawaiProfil extends Model
      */
     public const STATUS_PNS = 'PEGAWAI NEGERI SIPIL';
 
+    /** Status pegawai PPPK (penuh). */
+    public const STATUS_PPPK = 'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA';
+
+    /** Status pegawai PPPK paruh waktu. */
+    public const STATUS_PPPK_PARUH_WAKTU = 'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA PARUH WAKTU';
+
+    /** Semua status pegawai non-PNS yang punya batas usia (BUP/BUT). */
+    public const STATUS_NON_PNS = [self::STATUS_PPPK, self::STATUS_PPPK_PARUH_WAKTU];
+
     /** Ambang batas tahun masa kerja untuk penghargaan, urut menurun. */
     public const AMBANG_PENGHARGAAN = [30, 20, 10];
 

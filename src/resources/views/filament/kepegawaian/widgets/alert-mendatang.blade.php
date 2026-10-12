@@ -62,6 +62,20 @@
             color: #dc2626;
         }
         .am-empty { font-size: .8125rem; color: #6b7280; padding: .25rem 0; }
+
+        .am-status {
+            display: inline-block; margin-inline-start: .375rem;
+            font-size: .625rem; font-weight: 700;
+            padding: .0625rem .375rem; border-radius: .25rem;
+            background: rgba(0,0,0,.07); color: #4b5563;
+        }
+        .dark .am-status { background: rgba(255,255,255,.10); color: #d1d5db; }
+        .am-status--pns { background: #dbeafe; color: #1e40af; }
+        .am-status--pppk { background: #dcfce7; color: #166534; }
+        .am-status--pppk-pw { background: #fef9c3; color: #854d0e; }
+        .dark .am-status--pns { background: rgba(59,130,246,.20); color: #93c5fd; }
+        .dark .am-status--pppk { background: rgba(34,197,94,.20); color: #86efac; }
+        .dark .am-status--pppk-pw { background: rgba(234,179,8,.20); color: #fde047; }
     </style>
 
     @if ($total === 0)
@@ -99,7 +113,7 @@
                 <div class="am-section am-section--kp">
                     <div class="am-head am-head--kp">
                         <x-filament::icon icon="heroicon-m-arrow-trending-up" />
-                        Kenaikan Pangkat ≤ 3 Bulan (perkiraan)
+                        Kenaikan Pangkat ≤ 6 Bulan (perkiraan)
                         <span class="am-count">{{ $alerts['kp']->count() }}</span>
                     </div>
                     <div class="am-body">
@@ -135,6 +149,8 @@
                             <div class="am-row">
                                 <div style="min-width:0">
                                     <a class="am-name" href="{{ \App\Filament\Kepegawaian\Resources\PegawaiProfilResource::getUrl('view', ['record' => $row['nip']]) }}">{{ $row['nama'] }}</a>
+                                    @php($cls = match ($row['status_short']) { 'PNS' => 'am-status--pns', 'PPPK' => 'am-status--pppk', 'PPPK PW' => 'am-status--pppk-pw', default => '' })
+                                    <span class="am-status {{ $cls }}">{{ $row['status_short'] }}</span>
                                     <p class="am-sub">{{ $row['golongan'] ? 'Gol. '.$row['golongan'] : '' }}{{ $row['jabatan'] ? ($row['golongan'] ? ' · ' : '').$row['jabatan'] : '' }}</p>
                                 </div>
                                 <div class="am-date">
