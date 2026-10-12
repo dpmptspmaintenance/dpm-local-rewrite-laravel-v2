@@ -57,7 +57,18 @@ class SuratTugasGeneratorService
         $dir = storage_path('app/surat-tugas-tmp');
 
         if (! is_dir($dir)) {
-            mkdir($dir, 0775, true);
+            @mkdir($dir, 0775, true);
+        }
+
+        // Folder bisa dibuat proses lain dengan UID berbeda (mis. root) sehingga
+        // php-fpm (www-data) tak bisa menulisnya — tempnam() memunculkan warning
+        // yang Laravel ubah jadi ErrorException. Fallback ke /tmp bila begitu.
+        if (! is_writable($dir)) {
+            @chmod($dir, 0777);
+
+            if (! is_writable($dir)) {
+                return sys_get_temp_dir();
+            }
         }
 
         return $dir;
