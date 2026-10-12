@@ -5,14 +5,11 @@ namespace App\Filament\Kepegawaian\Pages;
 use App\Exports\Kepegawaian\DukSheet;
 use App\Models\Kepegawaian\Duk;
 use App\Models\Kepegawaian\DukImpor;
-use App\Services\Kepegawaian\DukImportService;
 use App\Services\Kepegawaian\ExcelToPdfService;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
@@ -22,13 +19,13 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Excel as ExcelFormat;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * DAFTAR URUT KEPANGKATAN (DUK) — list + impor PDF + ekspor.
+ * DAFTAR URUT KEPANGKATAN (DUK) — list + ekspor. Impor PDF ada di halaman
+ * terpisah (Master > Impor DUK).
  *
  * Beda dari halaman penghargaan: masa kerja di DUK adalah hasil perhitungan
  * resmi kepegawaian yang dibawa dokumen, BUKAN turunan NIP — makanya DUK
@@ -120,25 +117,6 @@ class DukPage extends Page implements HasActions, HasSchemas, HasTable
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('imporDuk')
-                ->label('Impor DUK (PDF)')
-                ->icon('heroicon-o-arrow-up-tray')
-                ->color('primary')
-                ->modalHeading('Impor DUK dari PDF')
-                ->modalDescription('Unggah PDF DAFTAR URUT KEPANGKATAN. Tiap impor disimpan sebagai data upload baru (riwayat tetap ada). Masa kerja diambil apa adanya dari dokumen.')
-                ->modalSubmitActionLabel('Impor')
-                ->schema([
-                    FileUpload::make('duk_file')
-                        ->label('Berkas PDF DUK')
-                        ->acceptedFileTypes(['application/pdf'])
-                        ->maxSize(20480)
-                        ->required()
-                        ->storeFiles(false),
-                ])
-                ->action(function (array $data): void {
-                    $this->prosesImpor($data['duk_file'] ?? null);
-                }),
-
             Action::make('exportExcel')
                 ->label('Ekspor Excel')
                 ->icon('heroicon-o-arrow-down-tray')
@@ -177,45 +155,6 @@ class DukPage extends Page implements HasActions, HasSchemas, HasTable
         ];
     }
 
-    private function prosesImpor(mixed $upload): void
-    {
-        if (! $upload) {
-            Notification::make()->title('Pilih berkas terlebih dahulu.')->danger()->send();
-
-            return;
-        }
-
-        try {
-            $result = app(DukImportService::class)->import(
-                $upload->getRealPath(),
-                $upload->getClientOriginalName(),
-                Auth::user()?->nama ?? Auth::user()?->name,
-            );
-        } catch (\Throwable $e) {
-            Notification::make()
-                ->title('Impor gagal')
-                ->body($e->getMessage())
-                ->danger()
-                ->persistent()
-                ->send();
-
-            return;
-        }
-
-        // Pindah tampilan ke batch yang baru diimpor.
-        $this->data['duk_impor_id'] = $result['batch_id'];
-        $this->form->fill(['duk_impor_id' => $result['batch_id']]);
-
-        Notification::make()
-            ->title('Impor selesai')
-            ->body("{$result['count']} baris dimuat dari PDF"
-                .($result['opd'] ? " — {$result['opd']}" : '')
-                .'. Tersimpan sebagai data upload baru.')
-            ->success()
-            ->persistent()
-            ->send();
-    }
-
     public function table(Table $table): Table
     {
         return $table
@@ -245,6 +184,6 @@ class DukPage extends Page implements HasActions, HasSchemas, HasTable
                 TextColumn::make('pendidikan')->label('Pendidikan')->wrap()->placeholder('—')->toggleable(),
             ])
             ->emptyStateHeading('Belum ada data DUK')
-            ->emptyStateDescription('Klik "Impor DUK (PDF)" untuk memuat dari dokumen DUK.');
+            ->emptyStateDescription('Impor dokumen DUK lewat halaman Master > Impor DUK.');
     }
 }
