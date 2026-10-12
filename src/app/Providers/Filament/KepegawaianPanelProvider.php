@@ -15,6 +15,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -56,6 +57,23 @@ class KepegawaianPanelProvider extends PanelProvider
                 CutiTerbaru::class,
                 LiburMendatang::class,
             ])
+            // Hasil global search (navbar) dibuka di tab baru. Link hasil
+            // di-render Filament tanpa target, jadi dipasang satu listener
+            // klik terdelegasi (capture) yang memaksa target="_blank" untuk
+            // SEMUA hasil — termasuk kartu pegawai.
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_END,
+                fn (): string => <<<'HTML'
+                    <script>
+                        document.addEventListener('click', function (event) {
+                            const link = event.target.closest('.fi-global-search-results-ctn .fi-global-search-result-link');
+                            if (!link) return;
+                            event.preventDefault();
+                            window.open(link.href, '_blank', 'noopener');
+                        }, true);
+                    </script>
+                    HTML,
+            )
             // Not a real sign-out: this panel shares the app's single Google
             // OAuth session with every other module, so "logging out" here
             // would end the whole session. Intentional per user request —

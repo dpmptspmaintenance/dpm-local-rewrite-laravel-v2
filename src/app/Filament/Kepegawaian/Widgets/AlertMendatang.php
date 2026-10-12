@@ -3,6 +3,7 @@
 namespace App\Filament\Kepegawaian\Widgets;
 
 use App\Models\Kepegawaian\PegawaiProfil;
+use App\Services\Kepegawaian\BatasKenaikanPangkat;
 use Carbon\Carbon;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Collection;
@@ -47,7 +48,8 @@ class AlertMendatang extends Widget
     {
         $pns = PegawaiProfil::query()
             ->where('status_pegawai', PegawaiProfil::STATUS_PNS)
-            ->get(['nip', 'nama', 'jabatan', 'golongan', 'status_pegawai', 'tmt_golongan', 'kgb_selanjutnya', 'tmt_bup_but']);
+            ->with('riwayatJabatanTerakhir')
+            ->get(['nip', 'nama', 'jabatan', 'golongan', 'pendidikan', 'status_pegawai', 'tmt_golongan', 'kgb_selanjutnya', 'tmt_bup_but']);
 
         $semuaAsn = PegawaiProfil::query()
             ->whereIn('status_pegawai', [PegawaiProfil::STATUS_PNS, ...PegawaiProfil::STATUS_NON_PNS])
@@ -69,7 +71,17 @@ class AlertMendatang extends Widget
                 }
             }
 
-            if ($p->tmt_golongan) {
+            // KP diabaikan bila golongan sudah menyentuh/melewati batas
+            // maksimal menurut pendidikan + jalur karier (BatasKenaikanPangkat) —
+            // tak ada lagi kenaikan pangkat yang mungkin, jadi tak perlu diingatkan.
+            // Jalur (eselon/fungsional/pelaksana) dari jenis jabatan + nama jabatan terakhir.
+            $jalur = BatasKenaikanPangkat::jalurDariJabatan(
+                $p->riwayatJabatanTerakhir?->jenis_jabatan,
+                $p->riwayatJabatanTerakhir?->jabatan_baru ?? $p->jabatan,
+            );
+            $batas = BatasKenaikanPangkat::evaluasi($p->pendidikan, $p->golongan, $jalur);
+
+            if ($p->tmt_golongan && ! in_array($batas['status'], ['maks', 'lewat'], true)) {
                 $est = Carbon::parse($p->tmt_golongan)->addYears(self::TAHUN_KP_REGULER);
                 // Hanya estimasi dalam jendela ±: yang akan datang (<=6 bulan)
                 // ATAU baru saja terlewat (<=90 hari). Est yang jauh di masa

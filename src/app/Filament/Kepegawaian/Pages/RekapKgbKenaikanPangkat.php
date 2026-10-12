@@ -5,6 +5,8 @@ namespace App\Filament\Kepegawaian\Pages;
 use App\Models\Kepegawaian\PegawaiProfil;
 use App\Models\Kepegawaian\PegawaiRiwayatKgb;
 use App\Models\Kepegawaian\PegawaiRiwayatPangkat;
+use App\Services\Kepegawaian\BatasKenaikanPangkat;
+use Carbon\Carbon;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Pages\Page;
@@ -54,6 +56,7 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
             'tahun' => $this->selectedTahun(),
             'tampil_kgb' => true,
             'tampil_kp' => true,
+            'filter_batas' => '',
         ]);
     }
 
@@ -74,8 +77,20 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
                     ->label('Tampilkan Kenaikan Pangkat')
                     ->default(true)
                     ->live(),
+                Select::make('filter_batas')
+                    ->label('Filter Batas KP')
+                    ->options([
+                        '' => 'Semua',
+                        'maks_lewat' => 'Sudah di/lewat Batas',
+                        'maks' => 'Tepat di Batas Maks',
+                        'lewat' => 'Lewat Batas',
+                        'aman' => 'Belum Batas (aman)',
+                    ])
+                    ->default('')
+                    ->selectablePlaceholder(false)
+                    ->live(),
             ])
-            ->columns(3)
+            ->columns(4)
             ->statePath('data');
     }
 
@@ -171,6 +186,7 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
      *     kgb: Collection<int, PegawaiRiwayatKgb>,
      *     kgb_jadwal: Collection<int, PegawaiProfil>,
      *     kp: Collection<int, PegawaiRiwayatPangkat>,
+     *     kp_perkiraan: Collection<int, PegawaiProfil>,
      * }>
      */
     public function buildMonths(): array
@@ -215,7 +231,7 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
 
         $kp = $this->tampilKp()
             ? PegawaiRiwayatPangkat::query()
-                ->with('profil')
+                ->with(['profil.riwayatJabatanTerakhir'])
                 ->whereIn('nip', $nips)
                 ->whereYear('tmt_sk_pangkat', $tahun)
                 ->orderBy('tmt_sk_pangkat')
@@ -227,7 +243,31 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
                     (string) $r->nomor_sk_pangkat,
                 ]))
                 ->map(fn (Collection $g) => $g->sortByDesc(fn (PegawaiRiwayatPangkat $r): int => $r->tanggal_sk_pangkat?->timestamp ?? 0)->first())
+                // Filter batas KP: saring baris berdasarkan status batas
+                // (aman/maks/lewat) dari BatasKenaikanPangkat.
+                ->filter(fn (PegawaiRiwayatPangkat $r): bool => $this->lolosFilterBatas($r))
                 ->groupBy(fn (PegawaiRiwayatPangkat $r): int => (int) $r->tmt_sk_pangkat->month)
+            : collect();
+
+        // Perkiraan KP: PNS yang belum punya SK KP di tahun ini, tapi TMT
+        // golongan terakhir + 4 tahun (konvensi reguler) jatuh di tahun ini.
+        // Belum ada SK — ditandai "perkiraan" di view. Yang golongannya sudah
+        // menyentuh/lewat batas maks (jalur karier) tidak diperkirakan lagi.
+        $kpPerkiraan = $this->tampilKp()
+            ? PegawaiProfil::query()
+                ->with('riwayatJabatanTerakhir')
+                ->whereIn('nip', $nips)
+                ->whereNotNull('tmt_golongan')
+                ->whereRaw('YEAR(DATE_ADD(tmt_golongan, INTERVAL 4 YEAR)) = ?', [$tahun])
+                ->orderBy('tmt_golongan')
+                ->get()
+                ->reject(fn (PegawaiProfil $p): bool => $this->sudahPunyaKpTahunIni($p->nip, $tahun))
+                // Hanya yang status batasnya jelas "aman" (pendidikan dikenali
+                // & belum mentok) yang diperkirakan.
+                ->filter(fn (PegawaiProfil $p): bool => $this->batasProfil($p)['status'] === 'aman')
+                // Perkiraan hanya relevan saat filter batas terbuka/aman.
+                ->filter(fn (PegawaiProfil $p): bool => in_array($this->data['filter_batas'] ?? '', ['', 'aman'], true))
+                ->groupBy(fn (PegawaiProfil $p): int => (int) Carbon::parse($p->tmt_golongan)->addYears(4)->month)
             : collect();
 
         $months = [];
@@ -236,8 +276,9 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
             $kgbBulan = $kgb->get($m, collect());
             $jadwalBulan = $jadwal->get($m, collect());
             $kpBulan = $kp->get($m, collect());
+            $kpPerkiraanBulan = $kpPerkiraan->get($m, collect());
 
-            if ($kgbBulan->isEmpty() && $jadwalBulan->isEmpty() && $kpBulan->isEmpty()) {
+            if ($kgbBulan->isEmpty() && $jadwalBulan->isEmpty() && $kpBulan->isEmpty() && $kpPerkiraanBulan->isEmpty()) {
                 continue;
             }
 
@@ -248,6 +289,7 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
                 'kgb' => $kgbBulan->values(),
                 'kgb_jadwal' => $jadwalBulan->values(),
                 'kp' => $kpBulan->values(),
+                'kp_perkiraan' => $kpPerkiraanBulan->values(),
             ];
         }
 
@@ -274,18 +316,109 @@ class RekapKgbKenaikanPangkat extends Page implements HasSchemas
     }
 
     /**
+     * Batas maksimal KP untuk satu baris riwayat pangkat: dibandingkan dengan
+     * golongan hasil KP (kolom golongan baris itu) terhadap plafon pendidikan
+     * pegawai. Dipakai view untuk menandai KP yang sudah menyentuh/melewati
+     * batas maksimal.
+     *
+     * @return array<string, mixed>
+     */
+    public function batasBaris(PegawaiRiwayatPangkat $kp): array
+    {
+        $profil = $kp->profil;
+
+        // Jalur karier dari jenis jabatan + nama jabatan pada riwayat jabatan
+        // TERAKHIR: Struktural → eselon; jabatan mengandung ahli/terampil/
+        // pengatur → fungsional; selain itu pelaksana. Menentukan plafon KP.
+        $jalur = BatasKenaikanPangkat::jalurDariJabatan(
+            $profil?->riwayatJabatanTerakhir?->jenis_jabatan,
+            $profil?->riwayatJabatanTerakhir?->jabatan_baru ?? $profil?->jabatan,
+        );
+
+        return BatasKenaikanPangkat::evaluasi(
+            $profil?->pendidikan,
+            $kp->golongan ?? $profil?->golongan,
+            $jalur,
+        );
+    }
+
+    /** Apakah baris KP lolos filter "Filter Batas KP" yang sedang aktif? */
+    public function lolosFilterBatas(PegawaiRiwayatPangkat $kp): bool
+    {
+        $pilih = $this->data['filter_batas'] ?? '';
+        if ($pilih === '') {
+            return true;
+        }
+
+        $status = $this->batasBaris($kp)['status'];
+
+        return match ($pilih) {
+            'maks_lewat' => in_array($status, ['maks', 'lewat'], true),
+            'maks' => $status === 'maks',
+            'lewat' => $status === 'lewat',
+            'aman' => $status === 'aman',
+            default => true,
+        };
+    }
+
+    /**
+     * Batas KP untuk satu PROFIL pegawai (golongan sekarang), dipakai untuk
+     * menyaring perkiraan KP. Jalur dari riwayat jabatan terakhir.
+     *
+     * @return array<string, mixed>
+     */
+    public function batasProfil(PegawaiProfil $p): array
+    {
+        $jalur = BatasKenaikanPangkat::jalurDariJabatan(
+            $p->riwayatJabatanTerakhir?->jenis_jabatan,
+            $p->riwayatJabatanTerakhir?->jabatan_baru ?? $p->jabatan,
+        );
+
+        return BatasKenaikanPangkat::evaluasi($p->pendidikan, $p->golongan, $jalur);
+    }
+
+    /**
+     * Apakah pegawai sudah punya baris riwayat KP (SK) di tahun ini? Kalau
+     * sudah, dia tak perlu muncul di blok perkiraan.
+     */
+    protected function sudahPunyaKpTahunIni(string $nip, int $tahun): bool
+    {
+        static $cache = [];
+
+        $key = $tahun;
+        if (! isset($cache[$key])) {
+            $cache[$key] = PegawaiRiwayatPangkat::query()
+                ->whereIn('nip', $this->nipsPns())
+                ->whereYear('tmt_sk_pangkat', $tahun)
+                ->pluck('nip')
+                ->flip();
+        }
+
+        return $cache[$key]->has($nip);
+    }
+
+    /**
      * @return array<string, int>
      */
     public function getStats(): array
     {
         $months = $this->buildMonths();
 
+        $kpRows = collect($months)->flatMap(fn (array $m): Collection => $m['kp']);
+        $kpPerkiraanRows = collect($months)->flatMap(fn (array $m): Collection => $m['kp_perkiraan']);
+        $kpMaks = $kpRows->filter(fn (PegawaiRiwayatPangkat $kp): bool => in_array(
+            $this->batasBaris($kp)['status'],
+            ['maks', 'lewat'],
+            true,
+        ))->count();
+
         return [
             // Hitung baris yang benar-benar tampil (sudah dedup + jadwal
-            // berikutnya) supaya angka kartu konsisten dengan isi bulan.
+            // berikutnya + perkiraan) supaya angka kartu konsisten dengan isi bulan.
             'kgb' => collect($months)->sum(fn (array $m): int => $m['kgb']->count() + $m['kgb_jadwal']->count()),
-            'kp' => collect($months)->sum(fn (array $m): int => $m['kp']->count()),
+            'kp' => $kpRows->count() + $kpPerkiraanRows->count(),
             'bulan' => count($months),
+            'kp_maks' => $kpMaks,
         ];
     }
 }
