@@ -257,6 +257,9 @@ class SuratPengantarGeneratorService
     }
 
     /**
+     * Tembusan dirapikan jadi list bernomor di dokumen ("1. ...", "2. ...")
+     * — baris sudah dinomori di sini supaya template cukup menampung teks.
+     *
      * @return list<string>
      */
     private function tembusanLines(SuratPengantar $surat): array
@@ -265,6 +268,7 @@ class SuratPengantarGeneratorService
             ->map(fn (string $t): string => trim($t))
             ->filter()
             ->values()
+            ->map(fn (string $t, int $i): string => ($i + 1).'. '.$t)
             ->all();
     }
 }
