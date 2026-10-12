@@ -24,6 +24,8 @@ class PegawaiProfil extends Model
     protected $casts = [
         'tanggal_lahir' => 'date',
         'tmt_bup_but' => 'date',
+        'kgb_selanjutnya' => 'date',
+        'kgb_tmt_golongan_terakhir' => 'date',
     ];
 
     // No form in this app mass-assigns pegawai_profil directly (the Pegawai
@@ -110,6 +112,20 @@ class PegawaiProfil extends Model
     public function riwayatPangkat(): HasMany
     {
         return $this->hasMany(PegawaiRiwayatPangkat::class, 'nip', 'nip')->orderBy('no_urut');
+    }
+
+    public function riwayatKgb(): HasMany
+    {
+        return $this->hasMany(PegawaiRiwayatKgb::class, 'nip', 'nip')->orderBy('no_urut');
+    }
+
+    /**
+     * Baris riwayat pangkat dengan TMT SK paling baru — dipakai untuk kolom
+     * ringkas "TMT Pangkat Terakhir" di tabel pegawai.
+     */
+    public function riwayatPangkatTerakhir(): HasOne
+    {
+        return $this->hasOne(PegawaiRiwayatPangkat::class, 'nip', 'nip')->latestOfMany('tmt_sk_pangkat');
     }
 
     /**
@@ -228,6 +244,36 @@ class PegawaiProfil extends Model
         $tmt = self::tahunTmtDariNip($nip);
 
         return $tmt === null ? null : (int) now()->year - $tmt;
+    }
+
+    /**
+     * Masa kerja "X tahun Y bulan" dihitung dari TMT pengangkatan pada NIP:
+     * digit ke-9..14 (enam digit YYYYMM) NIP 18 digit. Null bila NIP bukan
+     * 18 digit, segmen itu bukan angka/tanggal valid, atau TMT di masa depan.
+     */
+    public static function masaKerjaDariNip(string $nip): ?string
+    {
+        $digit = preg_replace('/\D+/', '', $nip);
+
+        if ($digit === null || strlen($digit) !== 18) {
+            return null;
+        }
+
+        $tahun = (int) substr($digit, 8, 4);
+        $bulan = (int) substr($digit, 12, 2);
+
+        if ($tahun < 1970 || $bulan < 1 || $bulan > 12) {
+            return null;
+        }
+
+        $now = now();
+        $totalBulan = (($now->year - $tahun) * 12) + ($now->month - $bulan);
+
+        if ($totalBulan < 0) {
+            return null;
+        }
+
+        return intdiv($totalBulan, 12).' tahun '.($totalBulan % 12).' bulan';
     }
 
     /**

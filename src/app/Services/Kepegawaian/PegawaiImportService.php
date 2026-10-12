@@ -8,6 +8,7 @@ use App\Models\Kepegawaian\PegawaiPenghargaan;
 use App\Models\Kepegawaian\PegawaiProfil;
 use App\Models\Kepegawaian\PegawaiRiwayatCpns;
 use App\Models\Kepegawaian\PegawaiRiwayatJabatan;
+use App\Models\Kepegawaian\PegawaiRiwayatKgb;
 use App\Models\Kepegawaian\PegawaiRiwayatPangkat;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -220,6 +221,42 @@ class PegawaiImportService
                 'verifikasi' => $pg['verifikasi'] ?? null,
             ]);
         }
+
+        // Riwayat KGB: ringkasan (gaji pokok, masa kerja, jadwal KGB
+        // selanjutnya, TMT golongan terakhir) + daftar detail per kenaikan.
+        // Full-snapshot replace per NIP.
+        $kgb = $record['riwayat_kgb'] ?? null;
+        if (is_array($kgb) && array_is_list($kgb)) {
+            $kgb = $kgb[0] ?? null;
+        }
+        $kgb = is_array($kgb) ? $kgb : null;
+        if ($kgb !== null && $kgb !== []) {
+            PegawaiProfil::whereKey($nip)->update([
+                'kgb_selanjutnya' => $this->parseDate($kgb['kgb_selanjutnya'] ?? null),
+                'kgb_gaji_pokok' => $this->parseRupiah($kgb['gaji_pokok_saat_kgb'] ?? null),
+                'kgb_masa_kerja_saat' => $kgb['masa_kerja_saat_kgb'] ?? null,
+                'kgb_masa_kerja_terakhir' => $kgb['masa_kerja_terakhir'] ?? null,
+                'kgb_tmt_golongan_terakhir' => $this->parseDate($kgb['tmt_golongan_terakhir'] ?? null),
+            ]);
+        }
+
+        PegawaiRiwayatKgb::where('nip', $nip)->delete();
+        foreach ($kgb['riwayat_kgb_detail'] ?? [] as $k) {
+            PegawaiRiwayatKgb::create([
+                'nip' => $nip,
+                'no_urut' => $this->toIntOrNull($k['no'] ?? null),
+                'file_kgb_url' => $k['file_kgb_url'] ?? null,
+                'gaji_baru' => $this->parseRupiah($k['gaji_baru'] ?? null),
+                'gaji_lama' => $this->parseRupiah($k['gaji_lama'] ?? null),
+                'golongan_kgb' => $k['golongan_kgb'] ?? null,
+                'masa_kerja_kgb' => $k['masa_kerja_kgb'] ?? null,
+                'nomor_sk_kgb' => $k['nomor_sk_kgb'] ?? null,
+                'tanggal_sk_kgb' => $this->parseDate($k['tanggal_sk_kgb'] ?? null),
+                'tmt_kgb' => $this->parseDate($k['tmt_kgb'] ?? null),
+                'unit_kerja_kgb' => $k['unit_kerja_kgb'] ?? null,
+                'verifikasi' => $k['verifikasi'] ?? null,
+            ]);
+        }
     }
 
     private function parseDate(?string $value): ?string
@@ -244,5 +281,21 @@ class PegawaiImportService
         }
 
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * Bersihkan nominal rupiah dari sumber ("Rp. 5.022.500," / "Rp 1.656.000")
+     * jadi digit murni ("5022500"). Koma/titik/tanda mata uang dibuang; nilai
+     * yang tak punya digit sama sekali → null.
+     */
+    private function parseRupiah(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', (string) $value);
+
+        return ($digits === null || $digits === '') ? null : $digits;
     }
 }

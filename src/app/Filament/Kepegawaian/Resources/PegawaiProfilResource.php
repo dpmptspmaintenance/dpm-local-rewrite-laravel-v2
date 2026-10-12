@@ -81,6 +81,13 @@ class PegawaiProfilResource extends Resource
                     TextEntry::make('capaian_bangkom')->label('Capaian Bangkom')->placeholder('—'),
                     TextEntry::make('bup_but')->label('BUP/BUT')->placeholder('—'),
                     TextEntry::make('tmt_bup_but')->label('TMT BUP/BUT')->date('d M Y')->placeholder('—'),
+                ]),
+
+            Section::make('KGB')
+                ->description('Data dari impor riwayat KGB terbaru')
+                ->columns(3)
+                ->collapsible()
+                ->schema([
                     TextEntry::make('kgb_selanjutnya')->label('KGB Selanjutnya')->date('d M Y')->placeholder('—'),
                 ]),
 
@@ -200,12 +207,21 @@ class PegawaiProfilResource extends Resource
                     ->badge()
                     ->color(fn (?string $state): string => $state && str_contains(strtolower($state), 'pns') ? 'success' : 'warning')
                     ->placeholder('—'),
-                TextColumn::make('tmt_bup_but')
-                    ->label('TMT Pensiun')
-                    ->date('d M Y')
-                    ->sortable()
+                TextColumn::make('masa_kerja_cpns')
+                    ->label('Masa Kerja')
+                    ->state(fn (PegawaiProfil $record): ?string => PegawaiProfil::masaKerjaDariNip((string) $record->nip))
                     ->placeholder('—')
                     ->toggleable(),
+                TextColumn::make('masa_kerja_duk')
+                    ->label('Masa Kerja DUK')
+                    ->state(fn (PegawaiProfil $record): ?string => $record->dukTerakhir()?->masaKerjaTeks())
+                    ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('kgb_selanjutnya')
+                    ->label('KGB Selanjutnya')
+                    ->date('d M Y')
+                    ->sortable()
+                    ->placeholder('—'),
                 TextColumn::make('kompetensi_count')
                     ->label('Kompetensi')
                     ->counts('kompetensi')
@@ -253,6 +269,7 @@ class PegawaiProfilResource extends Resource
             PegawaiProfilResource\RelationManagers\RiwayatCpnsRelationManager::class,
             PegawaiProfilResource\RelationManagers\RiwayatJabatanRelationManager::class,
             PegawaiProfilResource\RelationManagers\RiwayatPangkatRelationManager::class,
+            PegawaiProfilResource\RelationManagers\RiwayatKgbRelationManager::class,
             PegawaiProfilResource\RelationManagers\ArsipRelationManager::class,
         ];
     }
