@@ -22,6 +22,7 @@ use Filament\Forms\Components\ToggleButtons;
 use Filament\Forms\Components\ViewField;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -98,63 +99,79 @@ class DocumentResource extends Resource
                 ->default(Document::SOURCE_FILE)
                 ->inline()
                 ->live()
-                ->dehydrated(false) // bukan kolom DB — hanya penggerak visibilitas field
                 ->visibleOn('create'),
 
-            Repeater::make('berkas')
+            FileUpload::make('berkas')
                 ->label('Berkas')
-                ->helperText(fn (): string => 'Tekan "Tambah Berkas" untuk menambah berkas lain. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
-                ->addActionLabel('Tambah Berkas')
-                ->reorderable()
-                ->minItems(1)
-                ->defaultItems(1)
-                ->schema([
-                    FileUpload::make('file')
-                        ->label('Berkas')
-                        ->storeFiles(false)
-                        ->acceptedFileTypes(self::acceptedMimeTypes())
-                        ->maxSize(config('arsip.max_upload_kb'))
-                        ->required(),
-                ])
-                ->visibleOn('create')
-                ->visible(fn (Get $get): bool => $get('source_mode') !== Document::SOURCE_URL)
-                ->required(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') !== Document::SOURCE_URL),
+                ->helperText(fn (): string => 'Pilih bisa banyak berkas sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
+                ->multiple()
+                ->maxFiles(50)
+                ->storeFiles(false)
+                ->acceptedFileTypes(self::acceptedMimeTypes())
+                ->maxSize(config('arsip.max_upload_kb'))
+                ->visible(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') !== Document::SOURCE_URL),
 
             Textarea::make('urls')
                 ->label('Tautan Dokumen')
                 ->helperText('Satu URL per baris (boleh banyak baris sekaligus). Judul tiap tautan mengikuti segmen terakhir URL bila judul dikosongkan.')
                 ->rows(5)
-                ->visibleOn('create')
-                ->visible(fn (Get $get): bool => $get('source_mode') === Document::SOURCE_URL)
-                ->required(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') === Document::SOURCE_URL),
+                ->visible(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') === Document::SOURCE_URL),
 
             TextInput::make('title')
                 ->label('Judul Dokumen')
-                ->helperText('Opsional saat unggah batch; kosong = sistem memakai "[DRAF] - Nama File".')
+                ->helperText('Wajib bila tidak ada berkas (mode unggah berkas). Bila ada berkas, judul boleh kosong (sistem memakai "[DRAF] - Nama File"). Pada mode tautan, judul opsional.')
                 ->maxLength(255)
-                ->visibleOn(['create', 'edit']),
+                ->visibleOn(['create', 'edit'])
+                ->required(function (string $operation, Get $get): bool {
+                    // Di luar create, judul tidak dipaksa wajib di sini.
+                    if ($operation !== 'create') {
+                        return false;
+                    }
 
-            ViewField::make('file_list')
-                ->view('filament.arsip.forms.file-list')
-                ->label('Berkas Dokumen')
-                ->dehydrated(false)
-                ->visibleOn('edit')
-                ->visible(fn (?Document $record): bool => $record !== null && ! $record->isUrl()),
+                    // Mode tautan: judul opsional (judul bisa diambil dari URL),
+                    // aturan "judul wajib bila kosong" TIDAK berlaku.
+                    if ($get('source_mode') === Document::SOURCE_URL) {
+                        return false;
+                    }
 
-            Repeater::make('new_berkas')
-                ->label('Tambah Berkas (opsional)')
-                ->helperText(fn (): string => 'Opsional — kosongkan bila tidak menambah berkas baru; berkas lama tetap utuh. Berkas baru langsung ditambahkan setelah disimpan. Maks '.config('arsip.max_upload_kb').' KB. Format: '.implode(', ', config('arsip.allowed_extensions')))
-                ->addActionLabel('Tambah Berkas')
+                    $adaBerkas = collect($get('berkas') ?? [])->filter()->isNotEmpty();
+
+                    // Mode berkas: hanya wajib bila tidak ada berkas sama sekali.
+                    return ! $adaBerkas;
+                })
+                ->validationMessages([
+                    'required' => 'Judul dokumen wajib diisi bila tidak ada berkas.',
+                ]),
+
+            Section::make('Berkas')
+                ->description('Kelola berkas dokumen — hapus berkas lama atau tambah berkas baru (bisa banyak sekaligus).')
+                ->visible(fn (string $operation, ?Document $record): bool => $operation === 'edit' && $record !== null && ! $record->isUrl())
                 ->schema([
-                    FileUpload::make('file')
+                    ViewField::make('file_list')
+                        ->view('filament.arsip.forms.file-list')
+                        ->label('Berkas Tersimpan')
+                        ->dehydrated(false),
+
+                    Repeater::make('new_berkas')
                         ->label('Berkas')
-                        ->storeFiles(false)
-                        ->acceptedFileTypes(self::acceptedMimeTypes())
-                        ->maxSize(config('arsip.max_upload_kb'))
-                        ->required(),
-                ])
-                ->visibleOn('edit')
-                ->visible(fn (?Document $record): bool => $record !== null && ! $record->isUrl()),
+                        ->helperText(fn (): string => 'Berkas lama tampil di atas (ikon tempat sampah untuk menghapus). Tekan "Tambah Berkas" untuk mengunggah berkas baru — bisa banyak sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
+                        ->addActionLabel('Tambah Berkas')
+                        ->defaultItems(0)
+                        ->minItems(0)
+                        ->schema([
+                            FileUpload::make('file')
+                                ->label('Berkas')
+                                ->storeFiles(false)
+                                ->acceptedFileTypes(self::acceptedMimeTypes())
+                                ->maxSize(config('arsip.max_upload_kb'))
+                                // Preview bawaan Filament sangat tinggi (1 file
+                                // bisa 1 halaman) — pakai panel ringkas.
+                                ->panelLayout('compact')
+                                ->panelAspectRatio('6:1')
+                                ->imagePreviewHeight('70')
+                                ->required(),
+                        ]),
+                ]),
 
             TextInput::make('title')
                 ->label('Judul Dokumen')
@@ -225,8 +242,14 @@ class DocumentResource extends Resource
                     Document::STATUS_ARCHIVED => 'gray',
                 ])
                 ->inline()
-                ->visibleOn('edit')
-                ->disabled(fn (): bool => ! Auth::user()->isArsipAdmin()),
+                ->default(Document::STATUS_PENDING)
+                ->visibleOn(['create', 'edit'])
+                // Hanya Admin/Superadmin yang melihat field ini — staf biasa
+                // dokumennya selalu masuk Menunggu Verifikasi. Di create admin
+                // boleh langsung memilih "Terbit" tanpa melewati verifikasi.
+                ->visible(fn (): bool => (bool) Auth::user()?->isArsipAdmin())
+                ->disabledOn('edit')
+                ->helperText('Admin/Superadmin: pilih "Terbit" untuk langsung menerbitkan tanpa verifikasi.'),
         ]);
     }
 
@@ -313,6 +336,12 @@ class DocumentResource extends Resource
                 SelectFilter::make('category_id')
                     ->label('Kategori')
                     ->relationship('category', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->native(false),
+                SelectFilter::make('tag')
+                    ->label('Tag')
+                    ->relationship('tags', 'name')
                     ->searchable()
                     ->preload()
                     ->native(false),
@@ -446,6 +475,45 @@ class DocumentResource extends Resource
         return mb_strlen($msg) > 300 ? mb_substr($msg, 0, 297).'...' : $msg;
     }
 
+    /**
+     * Normalisasi state upload berkas jadi array meta siap dipakai
+     * DocumentService. Dua bentuk yang didukung:
+     *   - FileUpload ->multiple(): array FLAT berisi objek file.
+     *   - Repeater (lama): array item ['file' => file | array-file].
+     * Nilai tiap item bisa objek tunggal atau array — semuanya diratakan di
+     * sini agar aman dari error "getRealPath() on array".
+     *
+     * @param  mixed  $berkas
+     * @return list<array{path: string, filename: string, mime: string, extension: string, size: int}>
+     */
+    public static function normalizeUploadedFiles(mixed $berkas): array
+    {
+        return collect($berkas)
+            ->map(fn ($value) => is_array($value) && array_key_exists('file', $value) ? $value['file'] : $value)
+            ->flatMap(function ($value): array {
+                // Bisa berupa satu objek file, atau array objek file (multi).
+                return is_array($value) ? $value : [$value];
+            })
+            ->filter()
+            ->map(function ($file): ?array {
+                if (! $file instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile
+                    && ! $file instanceof \Illuminate\Http\UploadedFile) {
+                    return null;
+                }
+
+                return [
+                    'path' => $file->getRealPath(),
+                    'filename' => $file->getClientOriginalName(),
+                    'mime' => $file->getMimeType() ?: 'application/octet-stream',
+                    'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
+                    'size' => (int) $file->getSize(),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
     private static function acceptedMimeTypes(): array
     {
         return [
@@ -460,6 +528,12 @@ class DocumentResource extends Resource
             'image/png',
             'application/zip',
             'application/x-zip-compressed',
+            // Video ( Arsip bisa berupa rekaman kegiatan )
+            'video/mp4',
+            'video/quicktime',
+            'video/x-msvideo',
+            'video/x-matroska',
+            'video/webm',
         ];
     }
 

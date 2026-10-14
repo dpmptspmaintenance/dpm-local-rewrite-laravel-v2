@@ -30,37 +30,25 @@ class ViewDrhSatyaLancana extends ViewRecord
                     $path = app(DrhSatyaLancanaGeneratorService::class)->generateDocx($record);
 
                     return response()
-                        ->download($path, 'drh-satya-lancana-'.Str::slug($record->nama).'.docx', [
+                        ->download($path, 'drh-satya-lancana-'.\App\Filament\Kepegawaian\Resources\DrhSatyaLancanaResource::namaFile($record->nama).'.docx', [
                             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                         ])
                         ->deleteFileAfterSend(true);
                 }),
             Action::make('download_pdf')
-                ->label('Download PDF')
+                ->label('Lihat PDF')
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('danger')
-                ->action(function (): BinaryFileResponse {
-                    /** @var DrhSatyaLancana $record */
-                    $record = $this->getRecord();
-                    $path = app(DrhSatyaLancanaGeneratorService::class)->generatePdf($record);
-
-                    return response()
-                        ->download($path, 'drh-satya-lancana-'.Str::slug($record->nama).'.pdf', ['Content-Type' => 'application/pdf'])
-                        ->deleteFileAfterSend(true);
-                }),
+                // Dibuka inline di tab baru (bukan diunduh) lewat route pratinjau.
+                ->url(fn (): string => route('kepegawaian.drh-satya-lancana.pdf', $this->getRecord()))
+                ->openUrlInNewTab(),
             Action::make('download_merge')
-                ->label('Download Berkas Gabungan')
+                ->label('Berkas Gabungan')
                 ->icon('heroicon-o-document-duplicate')
                 ->color('warning')
-                ->action(function (): BinaryFileResponse {
-                    /** @var DrhSatyaLancana $record */
-                    $record = $this->getRecord();
-                    $path = app(\App\Services\Kepegawaian\DrhSatyaLancanaDocumentService::class)->merge($record);
-
-                    return response()
-                        ->download($path, 'berkas-drh-'.Str::slug($record->nama).'.pdf', ['Content-Type' => 'application/pdf'])
-                        ->deleteFileAfterSend(true);
-                }),
+                // Dibuka inline di tab baru (bukan diunduh) lewat route pratinjau.
+                ->url(fn (): string => route('kepegawaian.drh-satya-lancana.gabungan', $this->getRecord()))
+                ->openUrlInNewTab(),
             DeleteAction::make(),
         ];
     }

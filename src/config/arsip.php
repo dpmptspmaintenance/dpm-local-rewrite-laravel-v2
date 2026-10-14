@@ -24,7 +24,7 @@ return [
     'local_root' => env('ARSIP_LOCAL_ROOT', storage_path('app/private/arsip')),
 
     // Ekstensi berkas yang diizinkan saat unggah.
-    'allowed_extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'zip'],
+    'allowed_extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'zip', 'mp4', 'mov', 'avi', 'mkv', 'webm'],
 
     // Batas ukuran berkas dalam kilobyte (dipakai langsung oleh Filament
     // FileUpload::maxSize(), yang menerima KB). 50 MB default.
@@ -32,6 +32,6 @@ return [
 
     // Ekstensi yang boleh dipratinjau langsung di browser (inline). Selain ini
     // dipaksa unduh (attachment).
-    'inline_preview_extensions' => ['pdf', 'jpg', 'jpeg', 'png'],
+    'inline_preview_extensions' => ['pdf', 'jpg', 'jpeg', 'png', 'mp4', 'webm'],
 
 ];

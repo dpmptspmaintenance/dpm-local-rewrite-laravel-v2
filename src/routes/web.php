@@ -465,4 +465,14 @@ Route::middleware('auth')->group(function (): void {
         ->name('arsip.berkas.document-file');
     Route::get('/kepegawaian/arsip-berkas/{pegawaiArsip}', [ArsipFileController::class, 'showPegawaiArsip'])
         ->name('arsip.berkas.pegawai-arsip');
+
+    // Pratinjau inline PDF DRH Satya Lancana (dibuka di tab baru, bukan unduh).
+    Route::get('/kepegawaian/drh-satya-lancana/{drh}/pdf', [\App\Http\Controllers\Kepegawaian\DrhSatyaLancanaPdfController::class, 'show'])
+        ->name('kepegawaian.drh-satya-lancana.pdf');
+    // Pratinjau inline berkas lampiran DRH (SK CPNS, SK Pangkat, dll.).
+    Route::get('/kepegawaian/drh-satya-lancana/{drh}/lampiran/{jenis}', [\App\Http\Controllers\Kepegawaian\DrhSatyaLancanaPdfController::class, 'showLampiran'])
+        ->name('kepegawaian.drh-satya-lancana.lampiran');
+    // Pratinjau inline berkas gabungan (merge) DRH.
+    Route::get('/kepegawaian/drh-satya-lancana/{drh}/gabungan', [\App\Http\Controllers\Kepegawaian\DrhSatyaLancanaPdfController::class, 'showMerge'])
+        ->name('kepegawaian.drh-satya-lancana.gabungan');
 });

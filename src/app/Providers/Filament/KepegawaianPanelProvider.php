@@ -47,6 +47,12 @@ class KepegawaianPanelProvider extends PanelProvider
             ->topNavigation()
             ->maxContentWidth(Width::Full)
             ->discoverResources(in: app_path('Filament/Kepegawaian/Resources'), for: 'App\Filament\Kepegawaian\Resources')
+            // Arsip Digital dijadikan group sendiri di panel Kepegawaian (file
+            // resource tetap di Filament/Arsip agar terpisah). Resource-nya
+            // sudah bernavigationGroup 'Arsip', jadi muncul sebagai group
+            // terpisah di menu.
+            ->discoverResources(in: app_path('Filament/Arsip/Resources'), for: 'App\Filament\Arsip\Resources')
+            ->discoverPages(in: app_path('Filament/Arsip/Pages'), for: 'App\Filament\Arsip\Pages')
             ->discoverPages(in: app_path('Filament/Kepegawaian/Pages'), for: 'App\Filament\Kepegawaian\Pages')
             ->pages([
                 Dashboard::class,

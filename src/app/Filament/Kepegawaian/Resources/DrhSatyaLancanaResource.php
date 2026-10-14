@@ -382,10 +382,10 @@ class DrhSatyaLancanaResource extends Resource
     }
 
     /**
-     * Aksi unduh satu berkas lampiran (SK CPNS, SK Jabatan, dll.) dari disk
-     * lokal lewat suffixAction pada TextEntry. Selalu dikembalikan agar
-     * Filament tak error; tombol hanya muncul (visible) bila berkas ada dan
-     * fisiknya tersedia.
+     * Aksi buka satu berkas lampiran (SK CPNS, SK Jabatan, dll.) di TAB BARU
+     * secara inline lewat route pratinjau. Selalu dikembalikan agar Filament
+     * tak error; tombol hanya muncul (visible) bila berkas ada dan fisiknya
+     * tersedia.
      */
     public static function unduhLampiranAction(DrhSatyaLancana $drh, string $jenis): Action
     {
@@ -394,17 +394,16 @@ class DrhSatyaLancanaResource extends Resource
         $exists = $doc !== null && is_file($service->absolutePath($doc));
 
         return Action::make('unduh_lampiran_'.$jenis)
-            ->label('Unduh')
-            ->icon('heroicon-o-arrow-down-tray')
+            ->label('Lihat')
+            ->icon('heroicon-o-eye')
             ->color('gray')
-            ->tooltip('Unduh lampiran '.strtoupper($jenis))
+            ->tooltip('Lihat lampiran '.strtoupper($jenis).' di tab baru')
             ->visible($exists)
-            ->action(function () use ($service, $doc): BinaryFileResponse {
-                $path = $service->absolutePath($doc);
-                $filename = $doc->original_filename ?: (strtoupper($doc->jenis).'.'.pathinfo($path, PATHINFO_EXTENSION));
-
-                return response()->download($path, $filename);
-            });
+            ->url(fn (): string => route('kepegawaian.drh-satya-lancana.lampiran', [
+                'drh' => $drh->getKey(),
+                'jenis' => $jenis,
+            ]))
+            ->openUrlInNewTab();
     }
 
     /**
@@ -566,7 +565,7 @@ class DrhSatyaLancanaResource extends Resource
                     ->color('info')
                     ->action(function (DrhSatyaLancana $record): BinaryFileResponse {
                         $path = app(DrhSatyaLancanaGeneratorService::class)->generateDocx($record);
-                        $filename = 'drh-satya-lancana-'.Str::slug($record->nama).'.docx';
+                        $filename = 'drh-satya-lancana-'.self::namaFile($record->nama).'.docx';
 
                         return response()
                             ->download($path, $filename, [
@@ -578,26 +577,16 @@ class DrhSatyaLancanaResource extends Resource
                     ->label('PDF')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('danger')
-                    ->action(function (DrhSatyaLancana $record): BinaryFileResponse {
-                        $path = app(DrhSatyaLancanaGeneratorService::class)->generatePdf($record);
-                        $filename = 'drh-satya-lancana-'.Str::slug($record->nama).'.pdf';
-
-                        return response()
-                            ->download($path, $filename, ['Content-Type' => 'application/pdf'])
-                            ->deleteFileAfterSend(true);
-                    }),
+                    // Dibuka inline di tab baru (bukan diunduh) lewat route pratinjau.
+                    ->url(fn (DrhSatyaLancana $record): string => route('kepegawaian.drh-satya-lancana.pdf', $record))
+                    ->openUrlInNewTab(),
                 Action::make('download_merge')
                     ->label('Berkas Gabungan')
                     ->icon('heroicon-o-document-duplicate')
                     ->color('warning')
-                    ->action(function (DrhSatyaLancana $record): BinaryFileResponse {
-                        $path = app(\App\Services\Kepegawaian\DrhSatyaLancanaDocumentService::class)->merge($record);
-                        $filename = 'berkas-drh-'.Str::slug($record->nama).'.pdf';
-
-                        return response()
-                            ->download($path, $filename, ['Content-Type' => 'application/pdf'])
-                            ->deleteFileAfterSend(true);
-                    }),
+                    // Dibuka inline di tab baru (bukan diunduh) lewat route pratinjau.
+                    ->url(fn (DrhSatyaLancana $record): string => route('kepegawaian.drh-satya-lancana.gabungan', $record))
+                    ->openUrlInNewTab(),
                 DeleteAction::make(),
             ])
             ->toolbarActions([
@@ -617,5 +606,18 @@ class DrhSatyaLancanaResource extends Resource
             'view' => Pages\ViewDrhSatyaLancana::route('/{record}'),
             'edit' => Pages\EditDrhSatyaLancana::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Nama pegawai untuk nama berkas unduhan — Capitalize Each Word
+     * (mis. "BUDI SANTOSA" / "budi santosa" -> "Budi Santosa"), karakter
+     * ilegal untuk nama file dibuang, spasi dipertahankan.
+     */
+    public static function namaFile(string $nama): string
+    {
+        $bersih = preg_replace('/[\\\\\/:*?"<>|]+/', '', $nama) ?? $nama;
+        $bersih = preg_replace('/\s+/', ' ', trim($bersih)) ?? $bersih;
+
+        return Str::title($bersih);
     }
 }

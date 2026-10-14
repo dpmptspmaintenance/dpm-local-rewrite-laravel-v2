@@ -58,6 +58,37 @@ class DrhSatyaLancanaGeneratorService
     }
 
     /**
+     * Capitalize Each Word untuk nama, TANPA merusak gelar/singkatan:
+     *   "RISTA AMELIA ADHI, S.STP., M.M." -> "Rista Amelia Adhi, S.STP., M.M."
+     *   "HANGGORO LARAS SAKTI, ST"        -> "Hanggoro Laras Sakti, ST"
+     * Token yang mengandung titik (S.Kom, M.M.) atau singkatan pendek huruf
+     * kapital (ST, MM) dibiarkan apa adanya; sisanya di-title-case.
+     */
+    private function namaKapital(?string $nama): string
+    {
+        $nama = trim((string) $nama);
+
+        if ($nama === '') {
+            return '';
+        }
+
+        $kata = preg_split('/\s+/', $nama) ?: [];
+
+        $hasil = array_map(function (string $token): string {
+            $polos = trim($token, ".,;");
+
+            // Gelar/singkatan: ada titik, atau singkatan pendek ALL-CAPS.
+            if (str_contains($token, '.') || (mb_strlen($polos) <= 3 && $polos !== '' && mb_strtoupper($polos) === $polos)) {
+                return $token;
+            }
+
+            return mb_convert_case($token, MB_CASE_TITLE, 'UTF-8');
+        }, $kata);
+
+        return implode(' ', $hasil);
+    }
+
+    /**
      * @return string Path file .docx sementara. Pemanggil bertanggung jawab
      *                 menghapusnya setelah selesai dipakai.
      */

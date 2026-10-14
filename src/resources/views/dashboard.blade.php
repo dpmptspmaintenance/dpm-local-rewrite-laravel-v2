@@ -192,6 +192,9 @@
                 </div>
             @endif
 
+            {{-- Arsip Digital digabung ke dalam panel Kepegawaian (group "Arsip"),
+                 jadi kartu terpisah ini di-hide. Kode tetap utuh. --}}
+            {{--
             <div class="col-12 col-sm-6 col-lg-4">
                 <a href="{{ url('/arsip') }}" class="text-decoration-none text-dark">
                     <div class="card menu-card shadow-sm text-center py-5">
@@ -203,6 +206,7 @@
                     </div>
                 </a>
             </div>
+            --}}
 
         </div>
 

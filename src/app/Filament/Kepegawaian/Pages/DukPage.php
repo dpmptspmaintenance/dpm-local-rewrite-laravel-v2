@@ -19,6 +19,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Excel as ExcelFormat;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -62,16 +63,46 @@ class DukPage extends Page implements HasActions, HasSchemas, HasTable
         $this->form->fill(['duk_impor_id' => $this->latestBatchId()]);
     }
 
-    /** ID batch DUK terbaru (null bila belum ada impor). */
+    /**
+     * ID batch DUK terbaru yang punya baris. Batch hasil impor gagal
+     * (0 baris) dilewati supaya halaman tidak terbuka dalam keadaan kosong;
+     * kalau semua batch kosong, jatuh ke batch terbaru apa adanya.
+     */
     protected function latestBatchId(): ?int
     {
-        return DukImpor::query()->orderByDesc('diimpor_pada')->orderByDesc('id')->value('id');
+        $id = DukImpor::query()
+            ->where('jumlah_baris', '>', 0)
+            ->orderByDesc('diimpor_pada')
+            ->orderByDesc('id')
+            ->value('id')
+            ?? DukImpor::query()->orderByDesc('diimpor_pada')->orderByDesc('id')->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 
-    /** Batch yang sedang dipilih; fallback ke terbaru. */
+    /**
+     * Batch yang sedang dipilih; fallback ke terbaru. Nilai dari form Livewire
+     * selalu string (Select), jadi di-cast ke int sebelum dipakai.
+     */
     protected function selectedBatchId(): ?int
     {
-        return $this->data['duk_impor_id'] ?? $this->latestBatchId();
+        $id = $this->data['duk_impor_id'] ?? null;
+
+        if ($id === null || $id === '') {
+            return $this->latestBatchId();
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * Ganti periode upload → kembali ke halaman 1. Tanpa ini, kalau batch
+     * lama sedang di halaman 2+ dan batch baru lebih pendek, tabel tampak
+     * kosong karena page tersangkut di luar jumlah halaman.
+     */
+    public function updatedData(): void
+    {
+        $this->resetPage();
     }
 
     public function form(Schema $schema): Schema
@@ -158,7 +189,10 @@ class DukPage extends Page implements HasActions, HasSchemas, HasTable
     public function table(Table $table): Table
     {
         return $table
-            ->query(Duk::query()->where('duk_impor_id', $this->selectedBatchId() ?? 0))
+            // Closure, bukan Builder instance: query harus dievaluasi ulang
+            // tiap request supaya batch yang dipilih di dropdown langsung
+            // terpakai (Builder instance dibekukan saat boot komponen).
+            ->query(fn (): Builder => Duk::query()->where('duk_impor_id', $this->selectedBatchId() ?? 0))
             ->defaultSort('urutan_duk')
             ->columns([
                 TextColumn::make('urutan_duk')->label('No')->alignEnd()->sortable(),

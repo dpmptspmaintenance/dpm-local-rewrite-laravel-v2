@@ -57,7 +57,7 @@ class PegawaiProfilResource extends Resource
             Section::make('Identitas')
                 ->columns(3)
                 ->schema([
-                    TextEntry::make('nama')->label('Nama')->weight('bold'),
+                    TextEntry::make('nama_kapital')->label('Nama')->weight('bold'),
                     TextEntry::make('nip')->label('NIP')->copyable(),
                     TextEntry::make('nip_lama')->label('NIP Lama')->placeholder('—'),
                     TextEntry::make('gender')->label('Jenis Kelamin')->placeholder('—'),
@@ -205,7 +205,15 @@ class PegawaiProfilResource extends Resource
                 TextColumn::make('status_pegawai')
                     ->label('Status')
                     ->badge()
-                    ->color(fn (?string $state): string => $state && str_contains(strtolower($state), 'pns') ? 'success' : 'warning')
+                    // Warna beda per jenis kepegawaian: PNS hijau, PPPK biru,
+                    // PPPK Paruh Waktu abu-abu.
+                    ->color(fn (?string $state): string => match (true) {
+                        $state === null => 'gray',
+                        str_contains(strtolower($state), 'pns') && ! str_contains(strtolower($state), 'perjanjian') => 'success',
+                        str_contains(strtolower($state), 'paruh waktu') => 'gray',
+                        str_contains(strtolower($state), 'perjanjian') => 'info',
+                        default => 'warning',
+                    })
                     ->placeholder('—'),
                 TextColumn::make('masa_kerja_cpns')
                     ->label('Masa Kerja')
@@ -234,6 +242,8 @@ class PegawaiProfilResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('nama')
+            ->paginationPageOptions([25, 50, 100, 'all'])
+            ->defaultPaginationPageOption('all')
             ->filters([
                 SelectFilter::make('status_pegawai')
                     ->label('Status Pegawai')

@@ -49,24 +49,52 @@ class CreateDocument extends CreateRecord
 
         // Mode berkas: satu DOKUMEN dengan banyak baris berkas (repeater
         // "Tambah Berkas" — konsep sama Surat Tugas: satu induk, banyak anak).
-        $files = collect($data['berkas'] ?? [])
-            ->pluck('file')
-            ->filter()
-            ->map(fn ($file): array => [
-                'path' => $file->getRealPath(),
-                'filename' => $file->getClientOriginalName(),
-                'mime' => $file->getMimeType() ?: 'application/octet-stream',
-                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
-                'size' => (int) $file->getSize(),
-            ])
-            ->values()
-            ->all();
+        $files = DocumentResource::normalizeUploadedFiles($data['berkas'] ?? []);
 
         if ($files === []) {
-            throw new \RuntimeException('Pilih minimal satu berkas untuk diunggah.');
+            // Tidak ada berkas fisik: dokumen boleh dibuat tanpa berkas asalkan
+            // judul diisi (validasi form sudah memaksa judul wajib saat berkas
+            // & tautan sama-sama kosong). Judul jadi identitas dokumen.
+            if (blank($title)) {
+                throw new \RuntimeException('Judul dokumen wajib diisi bila tidak ada berkas/tautan.');
+            }
+
+            $status = ($data['status'] ?? null) && \Illuminate\Support\Facades\Auth::user()->isArsipAdmin()
+                ? (string) $data['status']
+                : \App\Models\Document::STATUS_PENDING;
+
+            $document = \App\Models\Document::create([
+                'title' => $title,
+                'source_type' => \App\Models\Document::SOURCE_FILE,
+                'status' => $status,
+                'category_id' => $categoryId,
+                'ownership_id' => $ownershipId,
+                'created_by' => \Illuminate\Support\Facades\Auth::id(),
+            ]);
+
+            $document->tags()->sync(collect($tagNames)
+                ->map(fn (string $name): int => \App\Models\Tag::resolve(trim($name))->id)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all());
+
+            return $document;
         }
 
-        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId);
+        // Admin/Superadmin boleh langsung memilih status (mis. "Terbit") saat
+        // unggah; staf biasa field status tidak tampil sehingga default
+        // Menunggu Verifikasi.
+        $status = ($data['status'] ?? null) && \Illuminate\Support\Facades\Auth::user()->isArsipAdmin()
+            ? (string) $data['status']
+            : \App\Models\Document::STATUS_PENDING;
+
+        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId, $status);
+
+        // Terbit langsung: rapikan folder Drive (rename "YYYY-MM-DD - Judul").
+        if ($status === \App\Models\Document::STATUS_PUBLISHED) {
+            $service->organizeOnPublish($document);
+        }
 
         return $document;
     }

@@ -84,7 +84,7 @@ class DocumentService
      * @param  list<array{path: string, filename: string, mime: string, extension: string, size: int}>  $files
      * @param  list<string>  $tagNames
      */
-    public function createWithFiles(array $files, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null): Document
+    public function createWithFiles(array $files, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, string $status = Document::STATUS_PENDING): Document
     {
         $folderId = $this->pendingFolderForYear(now()->year);
         $uploaded = [];
@@ -104,13 +104,13 @@ class DocumentService
         }
 
         try {
-            return DB::transaction(function () use ($files, $uploaded, $uploader, $categoryId, $title, $tagNames, $ownershipId): Document {
+            return DB::transaction(function () use ($files, $uploaded, $uploader, $categoryId, $title, $tagNames, $ownershipId, $status): Document {
                 $firstFilename = $files[0]['filename'] ?? 'dokumen';
 
                 $document = Document::create([
                     'title' => filled($title) ? $title : Document::fallbackTitle($firstFilename),
                     'source_type' => Document::SOURCE_FILE,
-                    'status' => Document::STATUS_PENDING,
+                    'status' => $status,
                     'category_id' => $categoryId,
                     'ownership_id' => $ownershipId,
                     'created_by' => $uploader->id,

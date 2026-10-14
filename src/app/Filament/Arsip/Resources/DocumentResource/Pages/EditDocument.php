@@ -77,18 +77,7 @@ class EditDocument extends EditRecord
         // gagal, sisa perubahan form tetap tersimpan).
         $newBerkas = $this->data['new_berkas'] ?? [];
 
-        $meta = collect($newBerkas)
-            ->pluck('file')
-            ->filter()
-            ->map(fn ($file): array => [
-                'path' => $file->getRealPath(),
-                'filename' => $file->getClientOriginalName(),
-                'mime' => $file->getMimeType() ?: 'application/octet-stream',
-                'extension' => strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION)),
-                'size' => (int) $file->getSize(),
-            ])
-            ->values()
-            ->all();
+        $meta = DocumentResource::normalizeUploadedFiles($newBerkas);
 
         if ($meta !== []) {
             try {

@@ -12,7 +12,6 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -132,50 +131,39 @@ class SuratPengantarResource extends Resource
                 ->collapsible(),
 
             Section::make('Pegawai yang Diusulkan')
+                ->description('Hanya boleh satu pegawai per surat.')
+                ->columns(2)
                 ->schema([
-                    Repeater::make('pegawai')
-                        ->label('')
-                        ->relationship()
-                        ->schema([
-                            Select::make('nip')
-                                ->label('Pegawai')
-                                ->options(fn (): array => PegawaiProfil::query()
-                                    ->orderBy('nama')
-                                    ->get(['nip', 'nama'])
-                                    ->mapWithKeys(fn (PegawaiProfil $p): array => [$p->nip => "{$p->nama} ({$p->nip})"])
-                                    ->all())
-                                ->searchable()
-                                ->live()
-                                ->required()
-                                ->afterStateUpdated(function (Select $component, ?string $state, callable $set): void {
-                                    if (blank($state)) {
-                                        return;
-                                    }
-
-                                    $p = PegawaiProfil::query()->find($state);
-
-                                    if (! $p) {
-                                        return;
-                                    }
-
-                                    $set('nama', $p->nama);
-                                    $set('jabatan', $p->jabatan);
-                                    $set('pangkat_golongan', trim(implode('/', array_filter([$p->pangkat, $p->golongan]))));
-                                    $set('instansi', 'Dinas Penanaman Modal dan Pelayanan Terpadu Satu Pintu Kota Semarang');
-                                }),
-                            TextInput::make('nama')->label('Nama (snapshot)')->required()->maxLength(255),
-                            TextInput::make('jabatan')->label('Jabatan (snapshot)')->maxLength(255),
-                            TextInput::make('pangkat_golongan')->label('Pangkat/Golongan (snapshot)')->maxLength(255),
-                            TextInput::make('instansi')->label('Instansi')->maxLength(255)->columnSpanFull(),
-                        ])
-                        ->columns(2)
-                        ->addActionLabel('Tambah Pegawai')
-                        ->reorderable()
-                        ->orderColumn('urutan')
-                        ->minItems(1)
-                        ->maxItems(1)
+                    Select::make('nip')
+                        ->label('Pegawai')
+                        ->options(fn (): array => PegawaiProfil::query()
+                            ->orderBy('nama')
+                            ->get(['nip', 'nama'])
+                            ->mapWithKeys(fn (PegawaiProfil $p): array => [$p->nip => "{$p->nama} ({$p->nip})"])
+                            ->all())
+                        ->searchable()
+                        ->live()
                         ->required()
-                        ->defaultItems(1),
+                        ->afterStateUpdated(function (?string $state, callable $set): void {
+                            if (blank($state)) {
+                                return;
+                            }
+
+                            $p = PegawaiProfil::query()->find($state);
+
+                            if (! $p) {
+                                return;
+                            }
+
+                            $set('nama', $p->nama);
+                            $set('jabatan', $p->jabatan);
+                            $set('pangkat_golongan', trim(implode('/', array_filter([$p->pangkat, $p->golongan]))));
+                            $set('instansi', 'Dinas Penanaman Modal dan Pelayanan Terpadu Satu Pintu Kota Semarang');
+                        }),
+                    TextInput::make('nama')->label('Nama')->required()->maxLength(255),
+                    TextInput::make('jabatan')->label('Jabatan')->maxLength(255),
+                    TextInput::make('pangkat_golongan')->label('Pangkat/Golongan')->maxLength(255),
+                    TextInput::make('instansi')->label('Instansi')->maxLength(255)->columnSpanFull(),
                 ]),
 
             Section::make('Tanda Tangan')

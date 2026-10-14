@@ -59,6 +59,36 @@ class PegawaiProfil extends Model
         return 'aktif';
     }
 
+    /**
+     * Nama tampil Capitalize Each Word, TANPA merusak gelar/singkatan:
+     *   "RISTA AMELIA ADHI, S.STP., M.M." -> "Rista Amelia Adhi, S.STP., M.M."
+     *   "AHMAD ROSIDIN, S.IP"             -> "Ahmad Rosidin, S.IP"
+     * Token yang mengandung titik (S.Kom, M.M.) atau singkatan pendek huruf
+     * kapital (ST, MM) dibiarkan apa adanya; sisanya di-title-case.
+     */
+    public function getNamaKapitalAttribute(): string
+    {
+        $nama = trim((string) $this->nama);
+
+        if ($nama === '') {
+            return '';
+        }
+
+        $kata = preg_split('/\s+/', $nama) ?: [];
+
+        $hasil = array_map(function (string $token): string {
+            $polos = trim($token, ".,;");
+
+            if (str_contains($token, '.') || (mb_strlen($polos) <= 3 && $polos !== '' && mb_strtoupper($polos) === $polos)) {
+                return $token;
+            }
+
+            return mb_convert_case($token, MB_CASE_TITLE, 'UTF-8');
+        }, $kata);
+
+        return implode(' ', $hasil);
+    }
+
     public function anak(): HasMany
     {
         return $this->hasMany(PegawaiAnak::class, 'nip', 'nip');

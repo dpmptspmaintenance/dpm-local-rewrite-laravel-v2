@@ -39,6 +39,12 @@ class DukImportService
     ];
 
     /**
+     * Jarak vertikal (pt) yang menandai batas antar record DUK. Baris dalam
+     * satu record berjarak ~9pt; antar record ~16-17pt.
+     */
+    private const RECORD_GAP = 12.0;
+
+    /**
      * @return array{count:int,opd:?string,periode:?string,rows:array<int,array<string,mixed>>,errors:array<int,string>}
      */
     public function parse(string $pdfPath): array
@@ -53,49 +59,36 @@ class DukImportService
 
         $opd = null;
         $periode = null;
-        $rows = [];
-        $current = null;
 
+        // Kop hanya ada di halaman pertama, tapi tetap dipindai semua baris
+        // agar tidak bergantung pada urutan/posisi.
         foreach ($lines as $line) {
             $text = $this->lineText($line);
 
-            // Baris header/kop: ambil OPD & periode, jangan dianggap data.
-            if ($opd === null && stripos($text, 'OPD') !== false && stripos($text, 'NAMA OPD') !== false) {
-                $opd = trim(preg_replace('/^.*?NAMA\s+OPD\s*:\s*/i', '', $text)) ?: null;
+            if ($opd === null && stripos($text, 'NAMA OPD') !== false) {
+                $opd = trim((string) preg_replace('/^.*?NAMA\s+OPD\s*:\s*/i', '', $text)) ?: null;
                 continue;
             }
+
             if ($periode === null && stripos($text, 'PERIODE') !== false) {
                 $after = trim((string) preg_replace('/^.*?PERIODE\s*:\s*/i', '', $text));
                 $periode = $after !== '' ? $after : null;
             }
+        }
 
-            $cols = $this->classify($line);
+        $rows = [];
 
-            // Baris data baru mulai saat kolom NO berisi "N." (mis. "1.").
-            $isNew = isset($cols['no']) && preg_match('/^\d+\.$/', trim($cols['no']));
+        // Satu record DUK membentang beberapa baris (NO/NAMA/NIP/TMT wrap).
+        // Baris dikelompokkan dulu jadi blok record; blok yang kolom NO-nya
+        // bukan "N." (mis. header tabel yang diulang tiap halaman) dibuang.
+        foreach ($this->groupIntoRecords($lines) as $block) {
+            $cols = $this->mergeColumns($block);
 
-            if ($isNew) {
-                if ($current !== null) {
-                    $rows[] = $this->finalize($current);
-                }
-                $current = $cols;
+            if (! isset($cols['no']) || ! preg_match('/^\d+\.$/', trim($cols['no']))) {
                 continue;
             }
 
-            // Baris lanjutan (wrap NIP/TMT/masa): tempel token ke record aktif
-            // per kolom yang sama.
-            if ($current !== null) {
-                foreach ($cols as $col => $val) {
-                    if ($col === 'no') {
-                        continue;
-                    }
-                    $current[$col] = trim(($current[$col] ?? '').' '.$val);
-                }
-            }
-        }
-
-        if ($current !== null) {
-            $rows[] = $this->finalize($current);
+            $rows[] = $this->finalize($cols);
         }
 
         return [
@@ -116,6 +109,13 @@ class DukImportService
     public function import(string $pdfPath, ?string $originalFilename, ?string $userName): array
     {
         $parsed = $this->parse($pdfPath);
+
+        // Batch 0 baris = parse gagal mengenali tabel (mis. kop terbaca
+        // "MASA MASA MASA", kolom bergeser). Jangan simpan batch kosong:
+        // batch kosong bikin halaman DUK default tampak kosong.
+        if ($parsed['count'] === 0) {
+            throw new \RuntimeException('Tidak ada baris pegawai yang terbaca dari PDF. Periksa apakah PDF ini memang DUK dengan tabel NO/NAMA/NIP (bukan hasil scan).');
+        }
 
         $batchId = DB::connection('kepegawaian')->transaction(function () use ($parsed, $originalFilename, $userName): int {
             $batchId = DB::connection('kepegawaian')->table('duk_impor')->insertGetId([
@@ -165,7 +165,14 @@ class DukImportService
         ];
     }
 
-    /** Jalankan pdftotext -bbox, kembalikan daftar kata berkoordinat. */
+    /**
+     * Jalankan pdftotext -bbox, kembalikan daftar kata berkoordinat.
+     *
+     * Nomor halaman WAJIB ikut disimpan: koordinat Y di-reset per halaman, jadi
+     * tanpa penanda halaman kata dari halaman 2+ akan bertabrakan dengan
+     * halaman 1 dan merusak pengelompokan baris (gejala: PDF multi-halaman
+     * terbaca 0 baris).
+     */
     private function extractWords(string $pdfPath): array
     {
         $result = Process::timeout(120)->run(['pdftotext', '-bbox', $pdfPath, '-']);
@@ -180,41 +187,53 @@ class DukImportService
             throw new \RuntimeException('Hasil pdftotext tidak bisa dibaca.');
         }
 
-        $xml->registerXPathNamespace('x', 'http://www.w3.org/1999/xhtml');
+        $ns = 'http://www.w3.org/1999/xhtml';
+        $xml->registerXPathNamespace('x', $ns);
 
         $words = [];
-        foreach ($xml->xpath('//x:word') as $w) {
-            $text = trim((string) $w);
-            if ($text === '') {
-                continue;
+
+        foreach ($xml->xpath('//x:page') as $pageIndex => $page) {
+            // Prefix namespace harus didaftarkan ulang di node halaman; kalau
+            // tidak, xpath anak gagal dan halaman itu terbaca kosong.
+            $page->registerXPathNamespace('x', $ns);
+
+            foreach ($page->xpath('.//x:word') as $w) {
+                $text = trim((string) $w);
+                if ($text === '') {
+                    continue;
+                }
+                $words[] = [
+                    'page' => $pageIndex,
+                    'x0' => (float) $w['xMin'],
+                    'y0' => (float) $w['yMin'],
+                    'text' => $text,
+                ];
             }
-            $words[] = [
-                'x0' => (float) $w['xMin'],
-                'y0' => (float) $w['yMin'],
-                'text' => $text,
-            ];
         }
 
         return $words;
     }
 
     /**
-     * Kluster kata jadi baris: urutkan per Y lalu X, pisah baris saat beda Y
-     * > 3pt (baris DUK main & lanjutan berjarak ~4.5pt).
+     * Kluster kata jadi baris: urutkan per halaman, lalu Y, lalu X; pisah baris
+     * saat beda Y > 3pt (baris DUK main & lanjutan berjarak ~4.5pt) ATAU saat
+     * pindah halaman.
      *
-     * @return array<int, array<int, array{x0:float,y0:float,text:string}>>
+     * @return array<int, array<int, array{page:int,x0:float,y0:float,text:string}>>
      */
     private function groupIntoLines(array $words): array
     {
-        usort($words, fn ($a, $b) => $a['y0'] <=> $b['y0'] ?: $a['x0'] <=> $b['x0']);
+        usort($words, fn ($a, $b) => $a['page'] <=> $b['page'] ?: $a['y0'] <=> $b['y0'] ?: $a['x0'] <=> $b['x0']);
 
         $lines = [];
         $currentY = null;
+        $currentPage = null;
 
         foreach ($words as $w) {
-            if ($currentY === null || abs($w['y0'] - $currentY) > 3.0) {
+            if ($currentY === null || $w['page'] !== $currentPage || abs($w['y0'] - $currentY) > 3.0) {
                 $lines[] = [];
                 $currentY = $w['y0'];
+                $currentPage = $w['page'];
             }
             $lines[count($lines) - 1][] = $w;
         }
@@ -227,10 +246,79 @@ class DukImportService
         return $lines;
     }
 
-    /** @param array<int,array{x0:float,y0:float,text:string}> $line */
+    /** @param array<int,array{page:int,x0:float,y0:float,text:string}> $line */
     private function lineText(array $line): string
     {
         return implode(' ', array_column($line, 'text'));
+    }
+
+    /**
+     * Kelompokkan baris jadi blok record. Batas record = pindah halaman atau
+     * jarak vertikal antar baris > RECORD_GAP (baris dalam satu record ~9pt,
+     * antar record ~16pt).
+     *
+     * @param array<int, array<int, array{page:int,x0:float,y0:float,text:string}>> $lines
+     * @return array<int, array<int, array<int, array{page:int,x0:float,y0:float,text:string}>>>
+     */
+    private function groupIntoRecords(array $lines): array
+    {
+        $blocks = [];
+        $current = null;
+        $lastY = null;
+        $lastPage = null;
+
+        foreach ($lines as $line) {
+            if ($line === []) {
+                continue;
+            }
+
+            $page = $line[0]['page'];
+            $y = $line[0]['y0'];
+
+            $newBlock = $current === null
+                || $page !== $lastPage
+                || ($lastY !== null && abs($y - $lastY) > self::RECORD_GAP);
+
+            if ($newBlock) {
+                if ($current !== null) {
+                    $blocks[] = $current;
+                }
+                $current = [];
+            }
+
+            $current[] = $line;
+            $lastY = $y;
+            $lastPage = $page;
+        }
+
+        if ($current !== null) {
+            $blocks[] = $current;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * Gabungkan semua baris satu blok jadi satu set kolom. Kolom NO digabung
+     * tanpa spasi karena nomor urut yang wrap ("1" + "0." = "10") harus
+     * direkatkan; kolom lain digabung dengan spasi.
+     *
+     * @param array<int, array<int, array{page:int,x0:float,y0:float,text:string}>> $block
+     * @return array<string,string>
+     */
+    private function mergeColumns(array $block): array
+    {
+        $cols = [];
+
+        foreach ($block as $line) {
+            foreach ($this->classify($line) as $name => $val) {
+                $cols[$name] = isset($cols[$name]) && $cols[$name] !== ''
+                    ? $cols[$name].($name === 'no' ? '' : ' ').$val
+                    : $val;
+            }
+        }
+
+        return $cols;
     }
 
     /**
@@ -292,9 +380,9 @@ class DukImportService
             'urutan_duk' => $no,
             'nama' => trim($cols['nama'] ?? '') ?: null,
             'nip' => ($nip = preg_replace('/\D+/', '', $cols['nip'] ?? '')) !== '' ? $nip : null,
-            'gol' => trim($cols['gol'] ?? '') ?: null,
+            'gol' => $this->cleanGol($cols['gol'] ?? null),
             'tmt' => $this->cleanDate($cols['tmt'] ?? null),
-            'gol_cpns' => trim($cols['gol_cpns'] ?? '') ?: null,
+            'gol_cpns' => $this->cleanGol($cols['gol_cpns'] ?? null),
             'tmt_cpns' => $this->cleanDate($cols['tmt_cpns'] ?? null),
             'jabatan' => $jabatan ?: null,
             'eselon' => $eselon ?: null,
@@ -302,6 +390,17 @@ class DukImportService
             'masa_kerja_bulan' => $bulan,
             'pendidikan' => trim($cols['pendidikan'] ?? '') ?: null,
         ];
+    }
+
+    /**
+     * Golongan DUK ("IV/ b", "III / d") dinormalkan jadi "IV/b": buang semua
+     * spasi. Spasi muncul karena "IV/" dan "b" jadi token terpisah di PDF.
+     */
+    private function cleanGol(?string $value): ?string
+    {
+        $value = preg_replace('/\s+/', '', trim((string) $value)) ?? '';
+
+        return $value !== '' ? $value : null;
     }
 
     /**

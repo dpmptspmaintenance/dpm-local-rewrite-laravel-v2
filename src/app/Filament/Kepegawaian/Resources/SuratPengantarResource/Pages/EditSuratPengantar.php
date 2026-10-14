@@ -11,6 +11,14 @@ class EditSuratPengantar extends EditRecord
 {
     protected static string $resource = SuratPengantarResource::class;
 
+    /**
+     * Snapshot field pegawai tunggal yang di-unset dari data record utama
+     * sebelum disimpan kembali sebagai baris surat_pengantar_pegawai.
+     *
+     * @var array<string, ?string>
+     */
+    private array $pegawaiSnapshot = [];
+
     protected function getHeaderActions(): array
     {
         return [
@@ -36,6 +44,14 @@ class EditSuratPengantar extends EditRecord
             $data['ttd_nip'] = 'kepala-dinas';
         }
 
+        // Isi field pegawai tunggal dari baris pegawai pertama.
+        $pegawai = $this->getRecord()->pegawai()->first();
+        $data['nip'] = $pegawai?->nip;
+        $data['nama'] = $pegawai?->nama;
+        $data['jabatan'] = $pegawai?->jabatan;
+        $data['pangkat_golongan'] = $pegawai?->pangkat_golongan;
+        $data['instansi'] = $pegawai?->instansi;
+
         if (filled($data['tempat_tanggal'] ?? null)) {
             $tanggalText = trim((string) str($data['tempat_tanggal'])->after(','));
             try {
@@ -60,7 +76,26 @@ class EditSuratPengantar extends EditRecord
         }
         unset($data['ttd_nip_snapshot']);
 
+        // Field pegawai tunggal bukan kolom surat_pengantar — lepas dari
+        // record utama, simpan ke baris surat_pengantar_pegawai.
+        foreach (['nip', 'nama', 'jabatan', 'pangkat_golongan', 'instansi'] as $field) {
+            $this->pegawaiSnapshot[$field] = $data[$field] ?? null;
+            unset($data[$field]);
+        }
+
         return $data;
+    }
+
+    protected function afterSave(): void
+    {
+        $record = $this->getRecord();
+
+        // Pegawai hanya satu: hapus baris lama lalu buat ulang dari snapshot.
+        $record->pegawai()->delete();
+        $record->pegawai()->create([
+            ...$this->pegawaiSnapshot,
+            'urutan' => 0,
+        ]);
     }
 
     protected function getRedirectUrl(): string
