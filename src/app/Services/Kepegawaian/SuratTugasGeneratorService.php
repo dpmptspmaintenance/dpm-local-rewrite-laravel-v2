@@ -3,6 +3,7 @@
 namespace App\Services\Kepegawaian;
 
 use App\Models\Kepegawaian\SuratTugas;
+use App\Models\Kepegawaian\SuratTugasPegawai;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\TemplateProcessor;
@@ -108,15 +109,33 @@ class SuratTugasGeneratorService
             throw new \RuntimeException('Surat Tugas harus punya minimal satu pegawai.');
         }
 
+        // Urutan tampil pada dokumen: pangkat/golongan tertinggi dulu (PNS),
+        // lalu PNS berikutnya, terakhir PPPK. Di dalam grup yang sama, urutan
+        // input user (urutan snapshot) dipertahankan.
+        $pegawai = $pegawai
+            ->map(fn (SuratTugasPegawai $row): array => [
+                'row' => $row,
+                'rank' => $this->rankPegawai((string) $row->pangkat_golongan),
+            ])
+            ->sort(function (array $a, array $b): int {
+                $urutan = $a['rank'] <=> $b['rank'];
+
+                return $urutan !== 0
+                    ? $urutan
+                    : ($a['row']->urutan <=> $b['row']->urutan);
+            })
+            ->map(fn (array $item): SuratTugasPegawai => $item['row'])
+            ->values();
+
         $tp->cloneRow('no', $pegawai->count());
 
         foreach ($pegawai->values() as $i => $row) {
             $n = $i + 1;
             $tp->setValue("no#{$n}", (string) $n);
-            $tp->setValue("nama#{$n}", (string) $row->nama);
+            $tp->setValue("nama#{$n}", $this->namaKapital($row->nama));
             $tp->setValue("nip#{$n}", (string) $row->nip);
             $tp->setValue("jabatan#{$n}", (string) ($row->jabatan ?? '-'));
-            $tp->setValue("pangkat_golongan#{$n}", (string) ($row->pangkat_golongan ?? '-'));
+            $tp->setValue("pangkat_golongan#{$n}", $this->pangkatTampil((string) ($row->pangkat_golongan ?? '')));
         }
 
         $tp->setValue('judul', $suratTugas->judul);
@@ -263,5 +282,115 @@ class SuratTugasGeneratorService
             ->all();
 
         return [...$default, ...$tambahan];
+    }
+
+    /**
+     * Rank urut pegawai pada daftar tugas: golongan tertinggi (IV/e) di
+     * atas, PNS di atas PPPK. Angka kecil = lebih tinggi. Snapshot berisi
+     * teks "Pangkat/Golongan" (mis. "Pembina/IV/a") — golongan diambil dari
+     * segmen setelah "/" terakhir. Golongan PPPK ("IX", "V") PNS-format-nya
+     * tak dikenali BatasKenaikanPangkat::urutan(), jadi dinilai di bawah
+     * semua golongan PNS (rank 100+), PPPK Paruh Waktu paling akhir.
+     */
+    private function rankPegawai(?string $pangkatGolongan): int
+    {
+        $teks = trim((string) $pangkatGolongan);
+
+        if ($teks === '') {
+            return 999;
+        }
+
+        $segmen = array_map(fn (string $s): string => trim($s), explode('/', $teks));
+
+        // Golongan PNS "IV/a" memecah jadi 3 segmen ("Pembina","IV","a") —
+        // gabungkan 2 segmen terakhir. Snapshot PPPK "IX/IX" tetap 2 segmen.
+        $n = count($segmen);
+        $golongan = $n >= 2 ? $segmen[$n - 2].'/'.$segmen[$n - 1] : $segmen[0];
+
+        $pnsRank = \App\Services\Kepegawaian\BatasKenaikanPangkat::urutan($golongan);
+
+        if ($pnsRank !== null) {
+            return $pnsRank; // 0 (I/a) s.d. 19 (IV/e) — makin kecil makin tinggi
+        }
+
+        // PPPK: golongan romawi tunggal (I, V, IX, … s.d. XVII) di segmen
+        // terakhir — makin besar makin tinggi. Offset 100 supaya selalu di
+        // bawah seluruh PNS.
+        $romawi = $this->nilaiRomawi(end($segmen));
+
+        if ($romawi !== null) {
+            return 100 + (99 - $romawi);
+        }
+
+        // "PPPK Paruh Waktu" / tak dikenal — paling akhir.
+        return 999;
+    }
+
+    /** Nilai angka romawi sederhana (I=1 … XVII=17), null bila bukan romawi valid. */
+    private function nilaiRomawi(string $teks): ?int
+    {
+        $peta = ['I' => 1, 'II' => 2, 'III' => 3, 'IV' => 4, 'V' => 5, 'VI' => 6,
+            'VII' => 7, 'VIII' => 8, 'IX' => 9, 'X' => 10, 'XI' => 11, 'XII' => 12,
+            'XIII' => 13, 'XIV' => 14, 'XV' => 15, 'XVI' => 16, 'XVII' => 17];
+
+        $romawi = $peta[strtoupper(trim($teks))] ?? null;
+
+        return $romawi;
+    }
+
+    /**
+     * Teks pangkat/golongan untuk dokumen: bila kedua segmen "X/X" identik
+     * (golongan PPPK, contoh "IX/IX"), tampil satu saja → "IX". Snapshot
+     * PNS ("Pembina/IV/a") tetap utuh.
+     */
+    private function pangkatTampil(string $pangkatGolongan): string
+    {
+        $teks = trim($pangkatGolongan);
+
+        if ($teks === '') {
+            return '-';
+        }
+
+        $segmen = array_map(fn (string $s): string => trim($s), explode('/', $teks));
+
+        // Golongan PPPK: snapshot "X/X" (contoh "IX/IX") — tampil satu saja.
+        if (count($segmen) === 2 && $segmen[0] !== '' && $segmen[0] === $segmen[1]) {
+            return $segmen[0];
+        }
+
+        return $teks;
+    }
+
+    /**
+     * Capitalize Each Word untuk nama, TANPA merusak gelar/singkatan:
+     *   "RISTA AMELIA ADHI, S.STP., M.M." -> "Rista Amelia Adhi, S.STP., M.M."
+     * Token yang mengandung titik (S.Kom) atau singkatan pendek ALL-CAPS
+     * dibiarkan apa adanya; sisanya di-title-case. Pola sama
+     * DrhSatyaLancanaGeneratorService::namaKapital().
+     */
+    private function namaKapital(?string $nama): string
+    {
+        $nama = trim((string) $nama);
+
+        if ($nama === '') {
+            return '';
+        }
+
+        $kata = preg_split('/\s+/', $nama) ?: [];
+
+        $hasil = array_map(function (string $token): string {
+            $polos = trim($token, ".,;");
+
+            // Gelar selalu mengandung titik (S.Kom, M.M.) — dipertahankan.
+            // Singkatan pendek ≤2 huruf ALL-CAPS (ST, MM) juga dipertahankan;
+            // 3 huruf ALL-CAPS (ADI, EKO) dianggap nama → title-case.
+            if (str_contains($token, '.') || (mb_strlen($polos) <= 2 && $polos !== '' && mb_strtoupper($polos) === $polos)) {
+                return $token;
+            }
+
+            return mb_convert_case($token, MB_CASE_TITLE, 'UTF-8');
+        }, $kata);
+
+        return implode(' ', $hasil);
     }
 }
