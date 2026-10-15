@@ -113,7 +113,7 @@ class Library extends Page implements HasActions, HasTable
     public function getSubheading(): ?string
     {
         if ($this->categorySlug === null) {
-            return 'Seluruh dokumen terbit. Gunakan filter kategori di bawah untuk menyaring.';
+            return 'Pilih kategori untuk melihat dokumen terbitnya.';
         }
 
         return 'Dokumen terbit pada kategori ini.';
@@ -179,6 +179,59 @@ class Library extends Page implements HasActions, HasTable
     }
 
     public function table(Table $table): Table
+    {
+        // Indeks (/library tanpa kategori): tiap baris = satu kategori,
+        // dirender sebagai kartu oleh contentGrid() — mekanisme persis sama
+        // dengan halaman isi kategori di bawah.
+        if ($this->categorySlug === null) {
+            return $this->categoryTable($table);
+        }
+
+        return $this->documentTable($table);
+    }
+
+    /**
+     * Tabel kategori (indeks /library): satu kartu per kategori.
+     */
+    protected function categoryTable(Table $table): Table
+    {
+        return $table
+            ->query(fn (): Builder => Category::query()
+                ->select(['categories.*'])
+                ->selectRaw('(SELECT COUNT(*) FROM documents WHERE documents.category_id = categories.id AND documents.status = ?) as dokumen_count', [Document::STATUS_PUBLISHED]))
+            ->contentGrid([
+                'default' => 1,
+                'sm' => 2,
+                'lg' => 3,
+                '2xl' => 4,
+            ])
+            ->recordUrl(fn (Category $record): string => static::getUrl([
+                'category' => $record->slug,
+            ]))
+            ->columns([
+                Stack::make([
+                    TextColumn::make('name')
+                        ->label('Kategori')
+                        ->searchable()
+                        ->sortable()
+                        ->weight('bold')
+                        ->size('lg'),
+                    TextColumn::make('slug')
+                        ->label('Jumlah dokumen')
+                        ->formatStateUsing(fn (Category $record): string => $record->dokumen_count.' dokumen')
+                        ->color('gray'),
+                ])->space(1),
+            ])
+            ->defaultSort('name')
+            ->paginated(false)
+            ->emptyStateHeading('Belum ada kategori')
+            ->emptyStateDescription('Kategori dibuat lewat menu Kategori, dan dokumen muncul di sini setelah diterbitkan.');
+    }
+
+    /**
+     * Tabel dokumen terbit pada satu kategori.
+     */
+    protected function documentTable(Table $table): Table
     {
         return $table
             // Closure, bukan Builder instance: query harus dievaluasi ulang
