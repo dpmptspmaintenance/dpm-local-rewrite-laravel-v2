@@ -22,6 +22,7 @@ class CreateDocument extends CreateRecord
     {
         $service = app(DocumentService::class);
         $title = $data['title'] ?? null;
+        $description = $data['description'] ?? null;
         $categoryId = $data['category_id'] ?? null;
         $ownershipId = $data['ownership_id'] ?? null;
         $tagNames = $data['tag_names'] ?? [];
@@ -36,7 +37,7 @@ class CreateDocument extends CreateRecord
                 ->values()
                 ->all();
 
-            $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service, $ownershipId);
+            $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service, $ownershipId, $description);
 
             if ($result['ids'] === []) {
                 throw new \RuntimeException(
@@ -65,6 +66,7 @@ class CreateDocument extends CreateRecord
 
             $document = \App\Models\Document::create([
                 'title' => $title,
+                'description' => $description,
                 'source_type' => \App\Models\Document::SOURCE_FILE,
                 'status' => $status,
                 'category_id' => $categoryId,
@@ -89,7 +91,7 @@ class CreateDocument extends CreateRecord
             ? (string) $data['status']
             : \App\Models\Document::STATUS_PENDING;
 
-        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId, $status);
+        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId, $status, $description);
 
         // Terbit langsung: rapikan folder Drive (rename "YYYY-MM-DD - Judul").
         if ($status === \App\Models\Document::STATUS_PUBLISHED) {

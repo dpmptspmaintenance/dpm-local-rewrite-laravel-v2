@@ -11,6 +11,7 @@ use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -100,6 +101,7 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
 
         $this->form->fill([
             'title' => $document->title,
+            'description' => $document->description,
             'category_id' => $document->category_id,
             'ownership_id' => $document->ownership_id,
             'tag_names' => $document->tags()->pluck('name')->all(),
@@ -125,6 +127,12 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
                     ->label('Judul Dokumen')
                     ->required()
                     ->maxLength(255),
+                Textarea::make('description')
+                    ->label('Deskripsi')
+                    ->nullable()
+                    ->rows(3)
+                    ->maxLength(65535)
+                    ->columnSpanFull(),
                 Select::make('category_id')
                     ->label('Kategori')
                     ->options(fn (): array => Category::query()->orderBy('name')->pluck('name', 'id')->all())
@@ -165,6 +173,7 @@ class ReviewQueue extends Page implements HasActions, HasSchemas, HasTable
             $state['category_id'] ?? null,
             $state['tag_names'] ?? [],
             $state['ownership_id'] ?? null,
+            $state['description'] ?? null,
         );
 
         Notification::make()->title('Dokumen diterbitkan')->success()->send();

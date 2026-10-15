@@ -32,6 +32,10 @@ class ViewDocument extends ViewRecord
                     ->columnSpan(1)
                     ->schema([
                         TextEntry::make('title')->label('Judul'),
+                        TextEntry::make('description')
+                            ->label('Deskripsi')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                         TextEntry::make('source_type')
                             ->label('Sumber')
                             ->badge()

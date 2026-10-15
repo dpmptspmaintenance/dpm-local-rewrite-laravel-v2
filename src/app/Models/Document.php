@@ -44,6 +44,7 @@ class Document extends Model
 
     protected $fillable = [
         'title',
+        'description',
         'source_type',
         'source_url',
         'drive_folder_id',

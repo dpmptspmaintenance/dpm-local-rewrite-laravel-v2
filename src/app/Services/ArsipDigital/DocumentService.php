@@ -31,7 +31,7 @@ class DocumentService
      * @param  array{path: string, filename: string, mime: string, extension: string, size: int}  $file
      * @param  list<string>  $tagNames
      */
-    public function upload(array $file, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null): Document
+    public function upload(array $file, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, ?string $description = null): Document
     {
         // Berkas mentah (belum diverifikasi) masuk ke "{tahun}/etc/" — tahun
         // dari tanggal unggah (now()), bukan created_at record (belum ada).
@@ -43,9 +43,10 @@ class DocumentService
         );
 
         try {
-            return DB::transaction(function () use ($file, $uploader, $categoryId, $title, $tagNames, $uploaded, $ownershipId): Document {
+            return DB::transaction(function () use ($file, $uploader, $categoryId, $title, $tagNames, $uploaded, $ownershipId, $description): Document {
                 $document = Document::create([
                     'title' => filled($title) ? $title : Document::fallbackTitle($file['filename']),
+                    'description' => $description,
                     'source_type' => Document::SOURCE_FILE,
                     'status' => Document::STATUS_PENDING,
                     'category_id' => $categoryId,
@@ -84,7 +85,7 @@ class DocumentService
      * @param  list<array{path: string, filename: string, mime: string, extension: string, size: int}>  $files
      * @param  list<string>  $tagNames
      */
-    public function createWithFiles(array $files, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, string $status = Document::STATUS_PENDING): Document
+    public function createWithFiles(array $files, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, string $status = Document::STATUS_PENDING, ?string $description = null): Document
     {
         $folderId = $this->pendingFolderForYear(now()->year);
         $uploaded = [];
@@ -104,11 +105,12 @@ class DocumentService
         }
 
         try {
-            return DB::transaction(function () use ($files, $uploaded, $uploader, $categoryId, $title, $tagNames, $ownershipId, $status): Document {
+            return DB::transaction(function () use ($files, $uploaded, $uploader, $categoryId, $title, $tagNames, $ownershipId, $status, $description): Document {
                 $firstFilename = $files[0]['filename'] ?? 'dokumen';
 
                 $document = Document::create([
                     'title' => filled($title) ? $title : Document::fallbackTitle($firstFilename),
+                    'description' => $description,
                     'source_type' => Document::SOURCE_FILE,
                     'status' => $status,
                     'category_id' => $categoryId,
@@ -146,7 +148,7 @@ class DocumentService
      * berkas fisik yang diunggah; baris cuma menyimpan referensi URL. Ikut
      * alur verifikasi sama seperti berkas (status awal pending_review).
      */
-    public function registerUrl(string $url, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null): Document
+    public function registerUrl(string $url, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, ?string $description = null): Document
     {
         $url = trim($url);
 
@@ -155,9 +157,10 @@ class DocumentService
             throw new \RuntimeException("URL tidak valid (harus http/https): {$url}");
         }
 
-        return DB::transaction(function () use ($url, $uploader, $categoryId, $title, $tagNames, $ownershipId): Document {
+        return DB::transaction(function () use ($url, $uploader, $categoryId, $title, $tagNames, $ownershipId, $description): Document {
             $document = Document::create([
                 'title' => filled($title) ? $title : Document::fallbackTitle(self::filenameFromUrl($url)),
+                'description' => $description,
                 'source_type' => Document::SOURCE_URL,
                 'source_url' => $url,
                 'status' => Document::STATUS_PENDING,
@@ -189,9 +192,9 @@ class DocumentService
         return $base;
     }
 
-    public function approve(Document $document, User $verifier, ?string $title, ?int $categoryId, array $tagNames, ?int $ownershipId = null): Document
+    public function approve(Document $document, User $verifier, ?string $title, ?int $categoryId, array $tagNames, ?int $ownershipId = null, ?string $description = null): Document
     {
-        DB::transaction(function () use ($document, $verifier, $title, $categoryId, $tagNames, $ownershipId): void {
+        DB::transaction(function () use ($document, $verifier, $title, $categoryId, $tagNames, $ownershipId, $description): void {
             $data = [
                 'title' => filled($title) ? $title : $document->title,
                 'category_id' => $categoryId,
@@ -200,6 +203,10 @@ class DocumentService
                 'verified_by' => $verifier->id,
                 'verified_at' => now(),
             ];
+
+            if ($description !== null) {
+                $data['description'] = $description;
+            }
 
             if ($ownershipId !== null || array_key_exists('ownership_id', func_get_args())) {
                 $data['ownership_id'] = $ownershipId;

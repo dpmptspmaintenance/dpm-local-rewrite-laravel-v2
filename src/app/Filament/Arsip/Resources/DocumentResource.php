@@ -143,6 +143,15 @@ class DocumentResource extends Resource
                     'required' => 'Judul dokumen wajib diisi bila tidak ada berkas.',
                 ]),
 
+            Textarea::make('description')
+                ->label('Deskripsi')
+                ->nullable()
+                ->rows(3)
+                ->maxLength(65535)
+                ->columnSpanFull()
+                ->visibleOn(['create', 'edit'])
+                ->helperText('Opsional. Jelaskan ringkasan atau keterangan dokumen.'),
+
             Section::make('Berkas')
                 ->description('Kelola berkas dokumen — hapus berkas lama atau tambah berkas baru (bisa banyak sekaligus).')
                 ->visible(fn (string $operation, ?Document $record): bool => $operation === 'edit' && $record !== null && ! $record->isUrl())
@@ -416,7 +425,7 @@ class DocumentResource extends Resource
      * @param  list<string>  $tagNames
      * @return array{ids: list<int>, errors: list<string>}
      */
-    public static function registerUrlBatch(array $urls, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null): array
+    public static function registerUrlBatch(array $urls, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null, ?string $description = null): array
     {
         $createdIds = [];
         $errors = [];
@@ -432,6 +441,7 @@ class DocumentResource extends Resource
                     ($multiple || blank($title)) ? null : $title,
                     $tagNames,
                     $ownershipId,
+                    $description,
                 )->id;
             } catch (\Throwable $e) {
                 $errors[] = "{$url}: ".self::ringkasError($e);
