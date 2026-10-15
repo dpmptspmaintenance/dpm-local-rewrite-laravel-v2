@@ -28,14 +28,18 @@ class ViewDocument extends ViewRecord
     {
         return $schema->components([
             Grid::make(3)->schema([
+                Section::make('Deskripsi')
+                    ->columnSpan(3)
+                    ->visible(fn (Document $record): bool => filled($record->description))
+                    ->schema([
+                        TextEntry::make('description')
+                            ->hiddenLabel()
+                            ->prose(),
+                    ]),
                 Section::make('Detail')
                     ->columnSpan(1)
                     ->schema([
                         TextEntry::make('title')->label('Judul'),
-                        TextEntry::make('description')
-                            ->label('Deskripsi')
-                            ->placeholder('—')
-                            ->columnSpanFull(),
                         TextEntry::make('source_type')
                             ->label('Sumber')
                             ->badge()
