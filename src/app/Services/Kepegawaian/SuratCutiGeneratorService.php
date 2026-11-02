@@ -43,6 +43,19 @@ class SuratCutiGeneratorService
         7 => 'VII', 8 => 'VIII', 9 => 'IX', 10 => 'X', 11 => 'XI', 12 => 'XII',
     ];
 
+    /** Nama bulan Indonesia (dan Inggris sebagai cadangan) → angka. */
+    private const BULAN = [
+        'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
+        'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8,
+        'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12,
+        'january' => 1, 'february' => 2, 'march' => 3, 'may' => 5,
+        'june' => 6, 'july' => 7, 'august' => 8,
+        'october' => 10, 'december' => 12,
+    ];
+
+    /** Cache tanggal libur (Y-m-d => true) dari tabel hari_libur. */
+    private ?array $liburCache = null;
+
     /**
      * Parse tempelan menjadi daftar orang + rincian cutinya. Baris yang tak
      * dikenali dikumpulkan terpisah (tidak diberi nomor).
@@ -154,6 +167,11 @@ class SuratCutiGeneratorService
      * "Cuti Sakit 2 hari (29 - 30 September 2026) pengajuan 05-10-2026 15:49:19"
      * Null bila pola tak cocok.
      *
+     * Angka "N hari" yang tertulis DIABAIKAN — durasi dihitung ulang sebagai
+     * hari kerja dari rentang tanggal (lewati Sabtu/Minggu + hari_libur).
+     * Hanya dua pola rentang yang didukung: "13 - 17 November 2026" dan
+     * "05 Oktober 2026" (satu hari). Di luar itu → null (baris ditolak).
+     *
      * tahun_cuti = tahun cutinya (dari rentang). Null bila rentang memuat
      * 0/2+ tahun berbeda (mis. lintas tahun) — meniru rekap yang mengabaikan
      * baris lintas tahun.
@@ -171,16 +189,133 @@ class SuratCutiGeneratorService
         preg_match_all('/(\d{4})/', $m[3], $tm);
         $tahunUnik = array_values(array_unique($tm[1]));
 
+        [$mulai, $selesai] = $this->rentangTanggal(trim($m[3]));
+
+        if ($mulai === null) {
+            return null;
+        }
+
+        $selesai ??= $mulai;
+
+        $hari = $this->hariKerja($mulai, $selesai);
+
+        if ($hari <= 0) {
+            return null;
+        }
+
         return [
             'jenis' => trim($m[1]),
-            'hari' => (int) $m[2],
+            'hari' => $hari,
             'rentang' => trim($m[3]),
             'pengajuan' => trim($m[4]),
             'bulan' => $bulan,
             'tahun' => $tahun,
-            'tahun_cuti' => count($tahunUnik) === 1 ? (int) $tahunUnik[0] : null,
+            'tahun_cuti' => $mulai->year === $selesai->year ? $mulai->year : null,
             'mentah' => trim($teks),
         ];
+    }
+
+    /**
+     * Parse rentang tanggal cuti. Dua pola:
+     * - "13 - 17 November 2026" (atau "13-17 November 2026")
+     * - "05 Oktober 2026" (satu hari)
+     *
+     * @return array{0: ?\Carbon\Carbon, 1: ?\Carbon\Carbon} [mulai, selesai/null utk 1 hari]
+     */
+    private function rentangTanggal(string $rentang): array
+    {
+        $rentang = trim(preg_replace('/\s+/u', ' ', $rentang) ?? $rentang);
+
+        if (preg_match('/^(\d{1,2})\s*[–—-]\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/u', $rentang, $m)) {
+            $bulan = self::BULAN[mb_strtolower($m[3])] ?? null;
+            $tahun = (int) $m[4];
+
+            if ($bulan === null || $tahun < 2000 || $tahun > 2100) {
+                return [null, null];
+            }
+
+            try {
+                $mulai = \Carbon\Carbon::create($tahun, $bulan, (int) $m[1])->startOfDay();
+                $selesai = \Carbon\Carbon::create($tahun, $bulan, (int) $m[2])->startOfDay();
+            } catch (\Throwable) {
+                return [null, null];
+            }
+
+            if ($selesai->lt($mulai)) {
+                return [null, null];
+            }
+
+            return [$mulai, $selesai];
+        }
+
+        if (preg_match('/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/u', $rentang, $m)) {
+            $bulan = self::BULAN[mb_strtolower($m[2])] ?? null;
+            $tahun = (int) $m[3];
+
+            if ($bulan === null || $tahun < 2000 || $tahun > 2100) {
+                return [null, null];
+            }
+
+            try {
+                $satu = \Carbon\Carbon::create($tahun, $bulan, (int) $m[1])->startOfDay();
+            } catch (\Throwable) {
+                return [null, null];
+            }
+
+            return [$satu, null];
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * Hitung hari kerja: tiap hari kalender dalam [mulai, selesai] kecuali
+     * Sabtu (6), Minggu (0), dan tanggal di tabel hari_libur.
+     */
+    public function hariKerja(\Carbon\Carbon $mulai, \Carbon\Carbon $selesai): int
+    {
+        $libur = $this->tanggalLibur();
+        $hitung = 0;
+        $hari = $mulai->copy()->startOfDay();
+        $akhir = $selesai->copy()->startOfDay();
+
+        while (! $hari->gt($akhir)) {
+            $dow = (int) $hari->format('w');
+
+            if ($dow !== 0 && $dow !== 6 && ! isset($libur[$hari->format('Y-m-d')])) {
+                $hitung++;
+            }
+
+            $hari->addDay();
+        }
+
+        return $hitung;
+    }
+
+    /** @return array<string, true> tanggal libur Y-m-d (cache per request). */
+    private function tanggalLibur(): array
+    {
+        if ($this->liburCache !== null) {
+            return $this->liburCache;
+        }
+
+        try {
+            $daftar = \App\Models\Kepegawaian\HariLibur::query()->pluck('tanggal');
+        } catch (\Throwable) {
+            return $this->liburCache = [];
+        }
+
+        $peta = [];
+
+        foreach ($daftar as $t) {
+            try {
+                $peta[\Carbon\Carbon::parse($t)->format('Y-m-d')] = true;
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $this->liburCache = $peta;
     }
 
     /**
@@ -214,6 +349,11 @@ class SuratCutiGeneratorService
      * SUSUN hasil generator: deteksi duplikat, hitung potongan sisa (aturan
      * PNS/PPPK sama seperti rekap), beri nomor sekuensial. Dipakai halaman
      * Generator Surat Cuti DAN API — jangan duplikasi aturan di tempat lain.
+     *
+     * Nomor diberikan BERDASARKAN TANGGAL PENGAJUAN TERDAHULU: nomor
+     * terkecil jatuh ke pengajuan paling lama. Baris tetap ditampilkan
+     * sesuai urutan input (no = urutan tempel), hanya alokasi nomornya
+     * yang mengikuti kronologi pengajuan.
      *
      * @param  list<array{nama: string, rinci: list<array<string, mixed>>}>  $orang
      * @param  list<string>  $takDikenali
@@ -290,9 +430,13 @@ class SuratCutiGeneratorService
 
         $rekap = Cuti::rekapTahunan($tahun, $tambahan)->keyBy('nip');
 
+        // Nomor berdasarkan tanggal pengajuan terdahulu: pipihkan semua
+        // rincian (no = urutan tempel), urutkan kronologis (stabil —
+        // pengajuan sama mempertahankan urutan tempel), lalu tampilkan +
+        // beri nomor berurutan dari nomor awal. Jadi baris tampil kronologis
+        // dengan no 1 = pengajuan terlama = nomor terkecil.
+        $pipih = [];
         $seq = max(1, $nomorAwal);
-        $no = 0;
-        $hasil = [];
 
         foreach ($orang as $o) {
             $profil = $this->profilUntukNama($o['nama']);
@@ -307,29 +451,54 @@ class SuratCutiGeneratorService
             }
 
             foreach ($o['rinci'] as $r) {
-                $no++;
-                $isDupe = ! empty($r['duplikat']);
-
-                $hasil[] = [
-                    'no' => $no,
+                $pipih[] = [
                     'nama' => $o['nama'],
                     'nip' => $profil?->nip,
                     'pengajuan' => $r['mentah'],
                     'pengajuan_at' => $r['pengajuan'],
-                    'nomor' => $isDupe ? null : $this->formatNomor($seq, $kode, (int) $r['bulan'], (int) $r['tahun']),
+                    'pengajuan_waktu' => $this->waktuPengajuan((string) ($r['pengajuan'] ?? '')),
+                    'urutan' => count($pipih),
                     'bulan' => (int) $r['bulan'],
                     'tahun' => (int) $r['tahun'],
                     'hari' => (int) $r['hari'],
                     'rentang' => $r['rentang'],
                     'jenis' => $r['jenis'],
-                    'duplikat' => $isDupe,
+                    'duplikat' => ! empty($r['duplikat']),
                     'sisa' => $sisa,
                 ];
-
-                if (! $isDupe) {
-                    $seq++;
-                }
             }
+        }
+
+        usort($pipih, fn (array $a, array $b): int =>
+            $a['pengajuan_waktu'] <=> $b['pengajuan_waktu'] ?: $a['urutan'] <=> $b['urutan']);
+
+        $hasil = [];
+        $no = 0;
+
+        foreach ($pipih as $p) {
+            $no++;
+            $nomor = null;
+
+            if (! $p['duplikat']) {
+                $nomor = $this->formatNomor($seq, $kode, $p['bulan'], $p['tahun']);
+                $seq++;
+            }
+
+            $hasil[] = [
+                'no' => $no,
+                'nama' => $p['nama'],
+                'nip' => $p['nip'],
+                'pengajuan' => $p['pengajuan'],
+                'pengajuan_at' => $p['pengajuan_at'],
+                'nomor' => $nomor,
+                'bulan' => $p['bulan'],
+                'tahun' => $p['tahun'],
+                'hari' => $p['hari'],
+                'rentang' => $p['rentang'],
+                'jenis' => $p['jenis'],
+                'duplikat' => $p['duplikat'],
+                'sisa' => $p['sisa'],
+            ];
         }
 
         return [
@@ -345,6 +514,31 @@ class SuratCutiGeneratorService
     {
         return mb_strtolower(preg_replace('/\s+/u', ' ', trim($nama)) ?? trim($nama))
             .'|'.preg_replace('/\s+/u', ' ', trim($pengajuan));
+    }
+
+    /**
+     * Timestamp pengajuan untuk pengurutan kronologis nomor. Format normal
+     * "05-10-2026 15:49:19" (atau tanpa jam). Gagal parse → jauh di belakang
+     * supaya baris rusak dapat nomor terakhir, bukan pertama.
+     */
+    private function waktuPengajuan(string $pengajuan): int
+    {
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/', trim($pengajuan), $m)) {
+            try {
+                return \Carbon\Carbon::create(
+                    (int) $m[3], (int) $m[2], (int) $m[1],
+                    (int) ($m[4] ?? 0), (int) ($m[5] ?? 0), (int) ($m[6] ?? 0),
+                )->timestamp;
+            } catch (\Throwable) {
+                // jatuh ke fallback di bawah
+            }
+        }
+
+        try {
+            return \Carbon\Carbon::parse($pengajuan)->timestamp;
+        } catch (\Throwable) {
+            return PHP_INT_MAX;
+        }
     }
 
     /** Profil pegawai berdasarkan nama (exact dulu, lalu case-insensitive). */
@@ -440,6 +634,10 @@ class SuratCutiGeneratorService
      * Normalisasi input terstruktur (hasil scrape extension) menjadi bentuk
      * "orang + rinci" yang sama dengan hasil parse teks.
      *
+     * Angka "hari" dari extension DIABAIKAN — durasi selalu dihitung ulang
+     * sebagai hari kerja dari tanggal_mulai..tanggal_selesai (lewati
+     * Sabtu/Minggu + hari_libur), sama seperti input teks.
+     *
      * @param  list<array<string, mixed>>  $rows
      * @return array{orang: list<array{nama: string, rinci: list<array<string, mixed>>}>, tak_dikenali: list<string>, errors: list<string>}
      */
@@ -451,7 +649,6 @@ class SuratCutiGeneratorService
         foreach ($rows as $i => $row) {
             $nama = trim((string) ($row['nama'] ?? ''));
             $jenis = trim((string) ($row['jenis'] ?? ''));
-            $hari = (int) ($row['hari'] ?? 0);
 
             $mulai = $this->tanggal($row['tanggal_mulai'] ?? null);
             $selesai = $this->tanggal($row['tanggal_selesai'] ?? $row['tanggal_mulai'] ?? null);
@@ -465,8 +662,18 @@ class SuratCutiGeneratorService
 
             $selesai ??= $mulai;
 
+            if ($selesai->lt($mulai)) {
+                $errors[] = 'Baris '.($i + 1).': tanggal_selesai lebih awal dari tanggal_mulai.';
+
+                continue;
+            }
+
+            $hari = $this->hariKerja($mulai->copy()->startOfDay(), $selesai->copy()->startOfDay());
+
             if ($hari <= 0) {
-                $hari = (int) $mulai->diffInDays($selesai) + 1;
+                $errors[] = 'Baris '.($i + 1).': rentang tidak memuat hari kerja (Sabtu/Minggu/libur semua).';
+
+                continue;
             }
 
             // Pengajuan dari data terstruktur bisa berupa "2026-10-05 15:49:19";

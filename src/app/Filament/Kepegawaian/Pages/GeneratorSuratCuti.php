@@ -104,6 +104,12 @@ class GeneratorSuratCuti extends Page
     /** Batch yang sedang dilihat rincinya (null = tidak ada). */
     public ?string $riwayatDetailBatch = null;
 
+    /** Batch yang dimintai konfirmasi hapus inline (null = tidak ada). */
+    public ?string $konfirmasiHapusBatch = null;
+
+    /** Index baris hasil yang dimintai konfirmasi hapus inline (null = tidak ada). */
+    public ?int $konfirmasiHapusBaris = null;
+
     /**
      * Rincian baris satu batch riwayat.
      *
@@ -375,6 +381,20 @@ class GeneratorSuratCuti extends Page
             return null;
         }
 
+        // Mirror ke Google Sheets eksternal (sama seperti POST API).
+        // Gagal sync tidak menggagalkan nomor — hanya notifikasi warning.
+        try {
+            app(\App\Services\Kepegawaian\GeneratorCutiSheetsMirror::class)->syncAll();
+        } catch (\Throwable $e) {
+            report($e);
+
+            Notification::make()
+                ->title('Sink Google Sheets gagal')
+                ->body('Nomor tetap dibuat dan riwayat DB tersimpan; sheet tidak terupdate: '.$e->getMessage())
+                ->warning()
+                ->send();
+        }
+
         $this->tersimpanBatch = $batch;
         $this->muatRiwayat();
         $this->simpanDraft();
@@ -385,8 +405,23 @@ class GeneratorSuratCuti extends Page
     /**
      * Hapus satu batch riwayat.
      */
+    public function mintaHapusRiwayat(string $batch): void
+    {
+        $this->konfirmasiHapusBatch = $batch;
+    }
+
+    public function batalHapusRiwayat(): void
+    {
+        $this->konfirmasiHapusBatch = null;
+    }
+
     public function hapusRiwayat(string $batch): void
     {
+        if ($this->konfirmasiHapusBatch !== $batch) {
+            return;
+        }
+
+        $this->konfirmasiHapusBatch = null;
         if (! $this->tabelRiwayatAda()) {
             $this->riwayatTersedia = false;
 
@@ -413,6 +448,22 @@ class GeneratorSuratCuti extends Page
 
         $this->muatRiwayat();
         $this->simpanDraft();
+
+        // Mirror ulang ke Google Sheets agar baris yang dihapus hilang dari sheet.
+        // Gagal sync hanya warning — data DB sudah terhapus duluan.
+        try {
+            app(\App\Services\Kepegawaian\GeneratorCutiSheetsMirror::class)->syncAll();
+        } catch (\Throwable $e) {
+            report($e);
+
+            Notification::make()
+                ->title($jumlah.' baris riwayat dihapus (sink Sheets gagal)')
+                ->body('Sheet tidak terupdate: '.$e->getMessage())
+                ->warning()
+                ->send();
+
+            return;
+        }
 
         Notification::make()
             ->title($jumlah.' baris riwayat dihapus')
@@ -456,12 +507,23 @@ class GeneratorSuratCuti extends Page
     /**
      * Hapus satu baris hasil lalu urutkan ulang nomor dari nomor awal.
      */
+    public function mintaHapusBaris(int $index): void
+    {
+        $this->konfirmasiHapusBaris = $index;
+    }
+
+    public function batalHapusBaris(): void
+    {
+        $this->konfirmasiHapusBaris = null;
+    }
+
     public function hapusBaris(int $index, SuratCutiGeneratorService $service): void
     {
-        if (! array_key_exists($index, $this->hasil)) {
+        if ($this->konfirmasiHapusBaris !== $index || ! array_key_exists($index, $this->hasil)) {
             return;
         }
 
+        $this->konfirmasiHapusBaris = null;
         array_splice($this->hasil, $index, 1);
         $this->penomoranUlang($service);
         $this->tersimpanBatch = null;

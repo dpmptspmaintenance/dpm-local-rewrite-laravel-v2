@@ -3,7 +3,8 @@
     "allow": [
       "Shell(cat .env 2>/dev/null | grep -E '^(APP_ENV|RAPATKITA|GENERATOR|GOOGLE)' ; echo '---'; ls storage/*.sqlite database/*.sqlite 2>/dev/null; echo '---'; grep -E 'APP_ENV' docker-compose.yml | head -5)",
       "Shell(docker:*)",
-      "Shell(grep:*)"
+      "Shell(grep:*)",
+      "Shell(grep -E '^GENERATORCUTI' .env; echo '---'; ls -l $(grep -E '^GENERATORCUTI_SHEETS_CREDENTIALS_PATH=' .env | cut -d= -f2) 2>&1 | head -5)"
     ],
     "deny": [],
     "defaultMode": "default"

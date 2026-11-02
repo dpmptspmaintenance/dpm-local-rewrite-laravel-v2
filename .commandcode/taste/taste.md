@@ -1,0 +1,1 @@
+- Prefers inline Yes/No icon confirmation for delete actions instead of alert dialogs. Confidence: 0.85

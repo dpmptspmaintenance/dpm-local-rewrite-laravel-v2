@@ -95,9 +95,18 @@
                                     <td class="sc-num">{{ $h['sisa'][$y] ?? '—' }}</td>
                                 @endforeach
                                 <td class="sc-actions-cell">
-                                    <button type="button" class="sc-del" wire:click="hapusBaris({{ $index }})" wire:confirm="Hapus baris ini dari daftar?" title="Hapus baris">
-                                        <x-filament::icon icon="heroicon-o-trash" class="sc-del-icon" />
-                                    </button>
+                                    @if ($konfirmasiHapusBaris === $index)
+                                        <button type="button" class="sc-yes" wire:click="hapusBaris({{ $index }})" title="Ya, hapus">
+                                            <x-filament::icon icon="heroicon-o-check" class="sc-del-icon" />
+                                        </button>
+                                        <button type="button" class="sc-no" wire:click="batalHapusBaris" title="Tidak">
+                                            <x-filament::icon icon="heroicon-o-x-mark" class="sc-del-icon" />
+                                        </button>
+                                    @else
+                                        <button type="button" class="sc-del" wire:click="mintaHapusBaris({{ $index }})" title="Hapus baris">
+                                            <x-filament::icon icon="heroicon-o-trash" class="sc-del-icon" />
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
@@ -142,9 +151,18 @@
                                     <button type="button" class="sc-view" wire:click="lihatRiwayat('{{ $r['batch'] }}')" title="Lihat rincian">
                                         <x-filament::icon icon="heroicon-o-eye" class="sc-del-icon" />
                                     </button>
-                                    <button type="button" class="sc-del" wire:click="hapusRiwayat('{{ $r['batch'] }}')" wire:confirm="Hapus riwayat batch ini?" title="Hapus riwayat">
-                                        <x-filament::icon icon="heroicon-o-trash" class="sc-del-icon" />
-                                    </button>
+                                    @if ($konfirmasiHapusBatch === $r['batch'])
+                                        <button type="button" class="sc-yes" wire:click="hapusRiwayat('{{ $r['batch'] }}')" title="Ya, hapus">
+                                            <x-filament::icon icon="heroicon-o-check" class="sc-del-icon" />
+                                        </button>
+                                        <button type="button" class="sc-no" wire:click="batalHapusRiwayat" title="Tidak">
+                                            <x-filament::icon icon="heroicon-o-x-mark" class="sc-del-icon" />
+                                        </button>
+                                    @else
+                                        <button type="button" class="sc-del" wire:click="mintaHapusRiwayat('{{ $r['batch'] }}')" title="Hapus riwayat">
+                                            <x-filament::icon icon="heroicon-o-trash" class="sc-del-icon" />
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
@@ -250,6 +268,18 @@
         }
         .sc-del:hover { color: #dc2626; background: #fef2f2; }
         .dark .sc-del:hover { background: #451a1a; }
+        .sc-yes {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 1.75rem; height: 1.75rem; border-radius: .375rem;
+            border: none; background: #dcfce7; color: #15803d; cursor: pointer;
+        }
+        .sc-yes:hover { background: #bbf7d0; color: #166534; }
+        .sc-no {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 1.75rem; height: 1.75rem; border-radius: .375rem;
+            border: none; background: #fee2e2; color: #b91c1c; cursor: pointer;
+        }
+        .sc-no:hover { background: #fecaca; color: #991b1b; }
         .sc-del-icon { width: 1rem; height: 1rem; }
         .sc-view {
             display: inline-flex; align-items: center; justify-content: center;

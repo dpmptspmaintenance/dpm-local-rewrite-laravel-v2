@@ -88,6 +88,7 @@ X-API-Key: dpmk_...</pre>
             <li>Aturan potong sisa sama seperti halaman: Tahunan selalu; Alasan Penting hanya PPPK; Sakit/Melahirkan/Besar tidak memotong.</li>
             <li>Tahun minus tampil 0 dan memotong tahun depannya; tahun kolom selain terakhir dibatasi 6.</li>
             <li>Duplikat (nama + tgl pengajuan sama) tidak diberi nomor dan tidak memotong sisa lagi.</li>
+            <li>Hitung hari: angka tertulis <strong>diabaikan</strong> — durasi dihitung ulang sebagai hari kerja dari rentang (lewati Sabtu/Minggu + <code>hari_libur</code>). Cth: tertulis 5 hari (13–17 Nov 2026) → tercatat 3 hari. Rentang valid: <code>13 - 17 November 2026</code> atau <code>05 Oktober 2026</code>; di luar itu baris ditolak (teks → <code>tak_dikenali</code>, rows → <code>errors</code>).</li>
             <li>Tidak ada penulisan ke tabel <code>cuti</code> — hanya arsip <code>riwayat_generator_cuti</code>.</li>
         </ul>
     </div>
