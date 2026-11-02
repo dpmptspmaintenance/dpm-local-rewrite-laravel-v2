@@ -49,8 +49,9 @@ class CutiTahunanSheet implements Export, FromCollection, ShouldAutoSize, WithEv
         // meski objek sheet yang sama dipakai berulang.
         $this->nomor = 0;
 
-        // Rekap dihitung di PHP (kolom Sisa per tahun mandiri, Total
-        // menggabungkannya — lihat Cuti::rekapTahunan()), diurutkan nama.
+        // Rekap dihitung di PHP (kolom Sisa per tahun memotong hutang tahun
+        // sebelumnya, Total menggabungkannya — lihat Cuti::rekapTahunan()),
+        // diurutkan nama.
         return Cuti::rekapTahunan($this->tahun)
             ->sortBy(fn (array $r) => $r['nama'])
             ->values();

@@ -134,6 +134,8 @@ class EditDocument extends EditRecord
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        // Setelah menyimpan, kembali ke halaman detail dokumen (bukan daftar)
+        // supaya perubahan berkas langsung terlihat.
+        return $this->getResource()::getUrl('view', ['record' => $this->getRecord()]);
     }
 }

@@ -136,6 +136,7 @@ class AlertMendatang extends Widget
             PegawaiProfil::STATUS_PNS => 'PNS',
             PegawaiProfil::STATUS_PPPK => 'PPPK',
             PegawaiProfil::STATUS_PPPK_PARUH_WAKTU => 'PPPK PW',
+            PegawaiProfil::STATUS_PENDAMPING => 'Pendamping',
             default => $status,
         };
     }

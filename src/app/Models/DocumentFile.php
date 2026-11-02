@@ -50,4 +50,23 @@ class DocumentFile extends Model
     {
         return $this->previewUrl();
     }
+
+    /**
+     * Apakah berkas ini gambar (JPG/PNG/dll)? Dipakai halaman detail dokumen
+     * untuk memilih antara kotak pratinjau gambar atau kotak nama + tipe.
+     */
+    public function isImage(): bool
+    {
+        $extension = strtolower((string) $this->file_extension);
+
+        if ($extension === '') {
+            $extension = strtolower(pathinfo((string) $this->original_filename, PATHINFO_EXTENSION));
+        }
+
+        if (in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'], true)) {
+            return true;
+        }
+
+        return str_starts_with(strtolower((string) $this->mime_type), 'image/');
+    }
 }

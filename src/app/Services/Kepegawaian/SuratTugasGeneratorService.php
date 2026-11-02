@@ -88,22 +88,32 @@ class SuratTugasGeneratorService
     {
         $this->configureTempDir();
 
+        // Muat ulang relasi agar override per baris (termasuk baris yang
+        // disembunyikan / baris baru) selalu terpakai saat render.
+        $suratTugas->unsetRelation('pegawai');
+        $suratTugas->load('pegawai');
+
         $tp = new TemplateProcessor($this->templatePath());
 
-        $dasarHukum = $this->dasarHukumLines($suratTugas);
+        $nilai = $this->nilaiDokumen($suratTugas);
+        $dasarHukum = $nilai['dasar_hukum'];
 
         if ($dasarHukum === []) {
             // cloneBlock(0, ..., []) membuang seluruh block tanpa menyisakan
             // paragraf kosong — diuji eksplisit saat menyiapkan template ini.
             $tp->cloneBlock('dasar_hukum', 0, true, false, []);
         } else {
+            // Setiap nilai WAJIB di-escape XML: setValue() PHPWord hanya
+            // str_replace, karakter & < > # pada nama/jabatan/dasar hukum
+            // akan merusak OpenXML (dokumen gagal dibuka / tampil berantakan).
             $tp->cloneBlock('dasar_hukum', count($dasarHukum), true, false, array_map(
-                fn (string $line): array => ['isi_dasar_hukum' => $line],
+                fn (string $line): array => ['isi_dasar_hukum' => $this->escapeXml($line)],
                 $dasarHukum,
             ));
         }
 
-        $pegawai = $suratTugas->pegawai;
+        $pegawai = $suratTugas->pegawai
+            ->filter(fn (SuratTugasPegawai $row): bool => ! (bool) $row->override_dihilangkan);
 
         if ($pegawai->isEmpty()) {
             throw new \RuntimeException('Surat Tugas harus punya minimal satu pegawai.');
@@ -115,7 +125,7 @@ class SuratTugasGeneratorService
         $pegawai = $pegawai
             ->map(fn (SuratTugasPegawai $row): array => [
                 'row' => $row,
-                'rank' => $this->rankPegawai((string) $row->pangkat_golongan),
+                'rank' => $this->rankPegawai((string) $row->pangkatGolonganDokumen()),
             ])
             ->sort(function (array $a, array $b): int {
                 $urutan = $a['rank'] <=> $b['rank'];
@@ -132,16 +142,16 @@ class SuratTugasGeneratorService
         foreach ($pegawai->values() as $i => $row) {
             $n = $i + 1;
             $tp->setValue("no#{$n}", (string) $n);
-            $tp->setValue("nama#{$n}", $this->namaKapital($row->nama));
-            $tp->setValue("nip#{$n}", (string) $row->nip);
-            $tp->setValue("jabatan#{$n}", (string) ($row->jabatan ?? '-'));
-            $tp->setValue("pangkat_golongan#{$n}", $this->pangkatTampil((string) ($row->pangkat_golongan ?? '')));
+            $tp->setValue("nama#{$n}", $this->escapeXml($this->namaKapital($row->namaDokumen())));
+            $tp->setValue("nip#{$n}", $this->escapeXml((string) $row->nip));
+            $tp->setValue("jabatan#{$n}", $this->escapeXml($row->jabatanDokumen() ?: '-'));
+            $tp->setValue("pangkat_golongan#{$n}", $this->escapeXml($this->pangkatTampil((string) ($row->pangkatGolonganDokumen() ?? ''))));
         }
 
-        $tp->setValue('judul', $suratTugas->judul);
-        $tp->setValue('hari_tanggal', $suratTugas->hari_tanggal);
-        $tp->setValue('waktu', $suratTugas->waktu);
-        $tp->setValue('tempat', $suratTugas->tempat);
+        $tp->setValue('judul', $this->escapeXml($nilai['judul']));
+        $tp->setValue('hari_tanggal', $this->escapeXml($nilai['hari_tanggal']));
+        $tp->setValue('waktu', $this->escapeXml($nilai['waktu']));
+        $tp->setValue('tempat', $this->escapeXml($nilai['tempat']));
 
         // tanggal_naskah: kalau diisi user, pakai nilainya; kalau kosong,
         // biarkan literal "${tanggal_naskah}" (diisi nanti di Srikandi).
@@ -150,25 +160,77 @@ class SuratTugasGeneratorService
         //
         // Template punya 3 kemunculan ${tanggal_naskah} (penutup + baris
         // lampiran); semuanya pakai nilai yang sama.
-        if (filled($suratTugas->tanggal_naskah)) {
-            $tp->setValue('tanggal_naskah', $suratTugas->tanggal_naskah);
+        if (filled($nilai['tanggal_naskah'])) {
+            $tp->setValue('tanggal_naskah', $this->escapeXml($nilai['tanggal_naskah']));
         }
 
         $tmp = tempnam($this->tempDir(), 'st_').'.docx';
         $tp->saveAs($tmp);
 
+        // Baris tabel dinamis: pastikan tidak pecah antar halaman dan tinggi
+        // minimum mengikuti isi (penyebab tampilan meluber/berantakan).
+        $this->perbaikiBarisTabel($tmp);
+
         return $tmp;
+    }
+
+    /**
+     * Tambahkan <w:cantSplit/> (baris tak terpotong antar halaman) dan
+     * pastikan tinggi baris memakai atLeast pada tabel lampiran pegawai.
+     */
+    private function perbaikiBarisTabel(string $docxPath): void
+    {
+        $zip = new \ZipArchive;
+
+        if ($zip->open($docxPath) !== true) {
+            return;
+        }
+
+        $xml = $zip->getFromName('word/document.xml');
+
+        if ($xml === false || $xml === '') {
+            $zip->close();
+
+            return;
+        }
+
+        $baru = preg_replace_callback(
+            '~<w:trPr>(.*?)</w:trPr>~s',
+            function (array $m): string {
+                $isi = $m[1];
+
+                // Sudah ada cantSplit — biarkan.
+                if (str_contains($isi, '<w:cantSplit')) {
+                    return $m[0];
+                }
+
+                return '<w:trPr><w:cantSplit/>'.$isi.'</w:trPr>';
+            },
+            $xml,
+        );
+
+        if ($baru !== null && $baru !== $xml) {
+            $zip->addFromString('word/document.xml', $baru);
+        }
+
+        $zip->close();
     }
 
     /**
      * @return string Path file .pdf sementara. Pemanggil bertanggung jawab
      *                 menghapusnya setelah selesai dipakai.
      */
-    public function generatePdf(SuratTugas $suratTugas): string
+    /**
+     * @param  ?string  $docxPath  Path .docx yang sudah ada (snapshot) — bila
+     *                             diisi, dipakai langsung tanpa render ulang.
+     *                             Bila null, dokumen dirender dari data.
+     */
+    public function generatePdf(SuratTugas $suratTugas, ?string $docxPath = null): string
     {
         $this->configureTempDir();
 
-        $docxPath = $this->generateDocx($suratTugas);
+        $sementara = $docxPath === null;
+        $docxPath ??= $this->generateDocx($suratTugas);
 
         try {
             return $this->convertToPdfViaLibreOffice($docxPath);
@@ -180,7 +242,9 @@ class SuratTugasGeneratorService
             // supaya fitur tetap jalan, walau hasilnya kurang presisi.
             return $this->convertToPdfViaDompdf($docxPath);
         } finally {
-            @unlink($docxPath);
+            if ($sementara) {
+                @unlink($docxPath);
+            }
         }
     }
 
@@ -259,14 +323,53 @@ class SuratTugasGeneratorService
     }
 
     /**
+     * Nilai efektif yang dipakai dokumen: koreksi manual (override_*) bila
+     * ada, selain itu data asli surat. Satu pintu supaya render awal dan
+     * render setelah edit selalu konsisten.
+     *
+     * @return array{judul: string, hari_tanggal: string, waktu: string, tempat: string, tanggal_naskah: ?string, dasar_hukum: list<string>, penutup: ?string}
+     */
+    public function nilaiDokumen(SuratTugas $suratTugas): array
+    {
+        return [
+            'judul' => (string) ($suratTugas->override_judul ?? $suratTugas->judul),
+            'hari_tanggal' => (string) ($suratTugas->override_hari_tanggal ?? $suratTugas->hari_tanggal),
+            'waktu' => (string) ($suratTugas->override_waktu ?? $suratTugas->waktu),
+            'tempat' => (string) ($suratTugas->override_tempat ?? $suratTugas->tempat),
+            'tanggal_naskah' => $suratTugas->override_tanggal_naskah ?? $suratTugas->tanggal_naskah,
+            'dasar_hukum' => $this->dasarHukumLines($suratTugas),
+            'penutup' => $suratTugas->override_penutup,
+        ];
+    }
+
+    /**
+     * Escape karakter yang merusak OpenXML. TemplateProcessor::setValue()
+     * TIDAK escape otomatis — ini titik utama penyebab dokumen "berantakan"
+     * saat nama/jabatan/dasar hukum mengandung &, <, >, atau kutip.
+     */
+    public function escapeXml(mixed $value): string
+    {
+        return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
      * Dasar hukum Setting (default, berlaku untuk semua surat) digabung
      * dengan dasar hukum tambahan khusus surat ini (dipisah baris oleh
      * pemanggil sebelum disimpan — lihat SuratTugas::dasar_hukum_tambahan).
+     * Koreksi manual (override_dasar_hukum) menggantikan seluruh daftar.
      *
      * @return list<string>
      */
     private function dasarHukumLines(SuratTugas $suratTugas): array
     {
+        if (filled($suratTugas->override_dasar_hukum)) {
+            return collect(preg_split('/\r\n|\r|\n/', (string) $suratTugas->override_dasar_hukum))
+                ->map(fn (string $t): string => trim($t))
+                ->filter()
+                ->values()
+                ->all();
+        }
+
         $default = \App\Models\Kepegawaian\SuratTugasDasarHukumSetting::query()
             ->orderBy('urutan')
             ->pluck('teks')

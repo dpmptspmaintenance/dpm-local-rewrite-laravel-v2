@@ -54,10 +54,18 @@ class ImportCuti extends Page
                     ->schema([
                         FileUpload::make('cuti_file')
                             ->label('File (.xlsx / .xls)')
+                            // File .xls (BIFF/OLE2) di banyak distro terdeteksi finfo
+                            // sebagai application/x-ole-storage, bukan application/vnd.ms-excel,
+                            // sehingga aturan mimetypes menolak berkas yang sah.
                             ->acceptedFileTypes([
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                 'application/vnd.ms-excel',
+                                'application/x-ole-storage',
+                                'application/x-cdf',
+                                'application/CDFV2',
+                                'application/octet-stream',
                             ])
+                            ->rules(['extensions:xlsx,xls'])
                             ->maxSize(20480)
                             ->required()
                             ->storeFiles(false),
@@ -93,7 +101,7 @@ class ImportCuti extends Page
 
         $this->errors = $result['errors'];
 
-        if ($result['inserted'] === 0 && $result['updated'] === 0 && $result['skipped'] === 0 && ($result['tanpa_surat'] ?? 0) === 0) {
+        if ($result['inserted'] === 0 && $result['updated'] === 0 && $result['skipped'] === 0 && ($result['tanpa_surat'] ?? 0) === 0 && ($result['status_lain'] ?? 0) === 0) {
             Notification::make()
                 ->title('Impor gagal')
                 ->body($result['errors'][0] ?? 'Tidak ada baris yang bisa diimpor.')
@@ -111,6 +119,9 @@ class ImportCuti extends Page
         if (($result['tanpa_surat'] ?? 0) > 0) {
             $body .= " {$result['tanpa_surat']} baris dilewati (No. Surat kosong).";
         }
+        if (($result['status_lain'] ?? 0) > 0) {
+            $body .= " {$result['status_lain']} baris dilewati (status bukan TTE Kepala Dinas).";
+        }
         $body .= ' Data lama yang tidak ada di file tetap tersimpan.';
 
         Notification::make()
@@ -119,6 +130,9 @@ class ImportCuti extends Page
             ->success()
             ->persistent()
             ->send();
+
+        // Penanda "impor hari ini" untuk gerbang Generator Surat Cuti.
+        \App\Models\Kepegawaian\Cuti::tandaiImporHariIni();
 
         $this->form->fill();
     }

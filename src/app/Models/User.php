@@ -62,6 +62,9 @@ class User extends Authenticatable implements FilamentUser, HasName
             // ketat lewat isArsipAdmin() di masing-masing Resource/Page, bukan
             // di gerbang panel ini.
             'arsip' => true,
+            // Tool: modul mandiri (Surat Tugas, Notulen, Sertifikat, Master
+            // Font, Dasar Hukum). Boleh dibuka semua pengguna yang login.
+            'tool' => true,
             default => (int) $this->role === 1 || (bool) $this->is_admin_kepegawaian,
         };
     }

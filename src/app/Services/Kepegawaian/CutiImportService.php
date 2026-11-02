@@ -24,11 +24,17 @@ use Throwable;
  * sebelumnya di-insert apa adanya dan menumpuk 18 baris sampah ber-no_surat
  * NULL di DB; hitungannya dikembalikan sebagai `tanpa_surat`.
  * The "No" column is ignored (source numbering, recomputed by the query).
+ *
+ * Hanya baris ber-status "TTE Kepala Dinas" yang dimasukkan/diperbarui; baris
+ * ber-status lain dilewati dan dihitung sebagai `status_lain`.
  */
 class CutiImportService
 {
     /** Panjang prefix yang dicoba saat mencocokkan NIP: 16 digit dulu, lalu 14. */
     private const NIP_PREFIX_LENGTHS = [16, 14];
+
+    /** Hanya baris dengan status ini yang boleh masuk DB (keputusan user). */
+    private const STATUS_DIIZINKAN = 'tte kepala dinas';
 
     /**
      * Prefix map per panjang (first N chars => full nip) dari pegawai_profil,
@@ -60,7 +66,7 @@ class CutiImportService
     ];
 
     /**
-     * @return array{inserted: int, updated: int, skipped: int, tanpa_surat: int, errors: list<string>}
+     * @return array{inserted: int, updated: int, skipped: int, tanpa_surat: int, status_lain: int, errors: list<string>}
      */
     public function replaceAll(string $path): array
     {
@@ -68,17 +74,18 @@ class CutiImportService
         $rows = IOFactory::load($path)->getSheet(0)->toArray(null, false, false, false);
 
         if (count($rows) < 2) {
-            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => 0, 'errors' => ['File tidak berisi data (hanya header atau kosong).']];
+            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => 0, 'status_lain' => 0, 'errors' => ['File tidak berisi data (hanya header atau kosong).']];
         }
 
         $headerError = $this->validateHeader($rows[0]);
         if ($headerError) {
-            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => 0, 'errors' => [$headerError]];
+            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => 0, 'status_lain' => 0, 'errors' => [$headerError]];
         }
 
         $records = [];
         $errors = [];
         $tanpaSurat = 0;
+        $statusLain = 0;
 
         foreach (array_slice($rows, 1) as $i => $row) {
             $rowNumber = $i + 2; // 1-based, header occupies row 1
@@ -102,6 +109,12 @@ class CutiImportService
                     continue;
                 }
 
+                // Hanya status "TTE Kepala Dinas" yang diimpor.
+                if (mb_strtolower(trim((string) $record['status'])) !== self::STATUS_DIIZINKAN) {
+                    $statusLain++;
+                    continue;
+                }
+
                 $records[] = $record;
             } catch (Throwable $e) {
                 $errors[] = "Baris {$rowNumber}: {$e->getMessage()}";
@@ -112,8 +125,12 @@ class CutiImportService
             $errors[] = "{$tanpaSurat} baris dilewati karena kolom No Surat kosong.";
         }
 
+        if ($statusLain > 0) {
+            $errors[] = "{$statusLain} baris dilewati karena status bukan \"TTE Kepala Dinas\".";
+        }
+
         if ($records === []) {
-            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => $tanpaSurat, 'errors' => array_merge(['Tidak ada baris valid untuk diimpor. Tabel cuti tidak diubah.'], $errors)];
+            return ['inserted' => 0, 'updated' => 0, 'skipped' => 0, 'tanpa_surat' => $tanpaSurat, 'status_lain' => $statusLain, 'errors' => array_merge(['Tidak ada baris valid untuk diimpor. Tabel cuti tidak diubah.'], $errors)];
         }
 
         // Upsert per no_surat: yang sudah ada diperbarui, yang baru di-insert.
@@ -173,7 +190,7 @@ class CutiImportService
             $errors[] = "{$skipped} baris dilewati karena pernah diedit manual lewat UI — isi DB dipertahankan.";
         }
 
-        return ['inserted' => count($toInsert), 'updated' => $updated, 'skipped' => $skipped, 'tanpa_surat' => $tanpaSurat, 'errors' => $errors];
+        return ['inserted' => count($toInsert), 'updated' => $updated, 'skipped' => $skipped, 'tanpa_surat' => $tanpaSurat, 'status_lain' => $statusLain, 'errors' => $errors];
     }
 
     private function validateHeader(array $row): ?string

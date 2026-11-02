@@ -2,5 +2,6 @@ old/
 src/.env
 docker-compose.yml
 docker-compose.override.yml
+docker/mandiri.env
 session-*.md
 contoh/

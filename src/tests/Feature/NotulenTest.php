@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Kepegawaian\Resources\NotulenResource\Pages\CreateNotulen;
+use App\Filament\Tool\Resources\NotulenResource\Pages\CreateNotulen;
 use App\Models\Kepegawaian\Notulen;
 use App\Models\User;
 use App\Services\Kepegawaian\NotulenGeneratorService;
@@ -24,7 +24,7 @@ class NotulenTest extends TestCase
         ]);
         DB::purge('mysql');
         DB::purge('kepegawaian');
-        Filament::setCurrentPanel('kepegawaian');
+        Filament::setCurrentPanel('tool');
     }
 
     protected function tearDown(): void

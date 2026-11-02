@@ -15,6 +15,7 @@
     <x-filament::section collapsible collapsed>
         <x-slot name="heading">Cara kerja impor</x-slot>
         <ul class="list-disc space-y-1 ps-5 text-sm text-gray-600 dark:text-gray-400">
+            <li><strong>Hanya baris ber-status <code>TTE Kepala Dinas</code></strong> yang diimpor; status lain dilewati.</li>
             <li>Baris dengan <strong>No Surat</strong> yang sudah ada di database akan <strong>diperbarui</strong>.</li>
             <li>Baris yang No Suratnya belum ada akan <strong>ditambahkan</strong> sebagai data baru.</li>
             <li>Data lama yang tidak muncul di berkas <strong>tetap tersimpan</strong> — tidak ada yang dihapus.</li>

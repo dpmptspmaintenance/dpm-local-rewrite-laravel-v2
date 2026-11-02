@@ -9,8 +9,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Read-only: pegawai_profil is sourced externally (sisdm scrape) and written
@@ -73,9 +76,35 @@ class PegawaiProfilResource extends Resource
                 ->schema([
                     TextEntry::make('jabatan')->placeholder('—')->columnSpan(2),
                     TextEntry::make('status_pegawai')->label('Status Pegawai')->badge()->placeholder('—'),
+                    TextEntry::make('status_akun')
+                        ->label('Status Akun')
+                        ->badge()
+                        ->state(function (PegawaiProfil $record): string {
+                            $akun = $record->akun();
+
+                            if ($akun === null) {
+                                return 'Belum punya akun';
+                            }
+
+                            return $akun->is_aktif ? 'Aktif' : 'Tidak aktif';
+                        })
+                        ->color(fn (string $state): string => match ($state) {
+                            'Aktif' => 'success',
+                            'Tidak aktif' => 'danger',
+                            default => 'gray',
+                        }),
+                    TextEntry::make('akun_email')
+                        ->label('Email Akun')
+                        ->state(fn (PegawaiProfil $record): ?string => $record->akun()?->email)
+                        ->placeholder('—'),
                     TextEntry::make('pangkat')->placeholder('—'),
                     TextEntry::make('golongan')->placeholder('—'),
                     TextEntry::make('tmt_golongan')->label('TMT Golongan')->date('d M Y')->placeholder('—'),
+                    TextEntry::make('masa_kerja_nip')
+                        ->label('Masa Kerja (NIP)')
+                        ->state(fn (PegawaiProfil $record): ?string => $record->masaKerjaTeks())
+                        ->helperText('Dihitung dari TMT pengangkatan pada NIP.')
+                        ->placeholder('—'),
                     TextEntry::make('kelas_jabatan')->label('Kelas Jabatan')->placeholder('—'),
                     TextEntry::make('pendidikan')->placeholder('—'),
                     TextEntry::make('capaian_bangkom')->label('Capaian Bangkom')->placeholder('—'),
@@ -206,15 +235,27 @@ class PegawaiProfilResource extends Resource
                     ->label('Status')
                     ->badge()
                     // Warna beda per jenis kepegawaian: PNS hijau, PPPK biru,
-                    // PPPK Paruh Waktu abu-abu.
+                    // PPPK Paruh Waktu abu-abu, Tenaga Pendamping ungu.
                     ->color(fn (?string $state): string => match (true) {
                         $state === null => 'gray',
+                        $state === PegawaiProfil::STATUS_PENDAMPING => 'primary',
                         str_contains(strtolower($state), 'pns') && ! str_contains(strtolower($state), 'perjanjian') => 'success',
                         str_contains(strtolower($state), 'paruh waktu') => 'gray',
                         str_contains(strtolower($state), 'perjanjian') => 'info',
                         default => 'warning',
                     })
                     ->placeholder('—'),
+                IconColumn::make('akun_aktif')
+                    ->label('Aktif')
+                    ->boolean()
+                    ->state(fn (PegawaiProfil $record): bool => PegawaiProfil::isAktif((string) $record->nip))
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger')
+                    ->tooltip(fn (PegawaiProfil $record): string => $record->akun()
+                        ? 'Punya akun pengguna'
+                        : 'Belum punya akun pengguna (NIP tidak cocok)'),
                 TextColumn::make('masa_kerja_cpns')
                     ->label('Masa Kerja')
                     ->state(fn (PegawaiProfil $record): ?string => $record->masaKerjaTeks())
@@ -245,6 +286,16 @@ class PegawaiProfilResource extends Resource
             ->paginationPageOptions([25, 50, 100, 'all'])
             ->defaultPaginationPageOption('all')
             ->filters([
+                TernaryFilter::make('aktif')
+                    ->label('Status Aktif')
+                    ->placeholder('Semua pegawai')
+                    ->trueLabel('Aktif (punya akun aktif)')
+                    ->falseLabel('Tidak aktif')
+                    ->default(true)
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereIn('nip', PegawaiProfil::nipAktif()),
+                        false: fn (Builder $query): Builder => $query->whereNotIn('nip', PegawaiProfil::nipAktif()),
+                    ),
                 SelectFilter::make('status_pegawai')
                     ->label('Status Pegawai')
                     ->options(fn (): array => PegawaiProfil::query()

@@ -171,6 +171,7 @@ class EvaluasiKesesuaianDiklat extends Page implements HasActions, HasSchemas, H
                         'PEGAWAI NEGERI SIPIL' => 'PNS',
                         'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA' => 'PPPK',
                         'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA PARUH WAKTU' => 'PPPK Paruh Waktu',
+                        \App\Models\Kepegawaian\PegawaiProfil::STATUS_PENDAMPING => 'Pendamping',
                         default => $state,
                     }),
                 TextColumn::make('jatah_jp')
@@ -250,6 +251,7 @@ class EvaluasiKesesuaianDiklat extends Page implements HasActions, HasSchemas, H
                         'PEGAWAI NEGERI SIPIL' => 'PNS',
                         'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA' => 'PPPK',
                         'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA PARUH WAKTU' => 'PPPK Paruh Waktu',
+                        \App\Models\Kepegawaian\PegawaiProfil::STATUS_PENDAMPING => 'Pendamping',
                     ]),
                 SelectFilter::make('kesesuaian')
                     ->label('Kesesuaian')

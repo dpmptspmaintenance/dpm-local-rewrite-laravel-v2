@@ -17,7 +17,7 @@ class CreateUser extends CreateRecord
      *
      * status_jabatan/nip: NOT NULL columns with no DB default; the form
      * fields aren't required (most new users won't have them yet), but an
-     * empty TextInput dehydrates to null, not ''. Force '' here to avoid
+     * empty field dehydrates to null, not ''. Force '' here to avoid
      * a hard failure under MySQL strict mode — ported verbatim from
      * UserController::addUser()'s blank placeholders.
      */

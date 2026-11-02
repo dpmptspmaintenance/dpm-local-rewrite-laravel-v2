@@ -178,6 +178,18 @@
                 </div>
             @endif
 
+            <div class="col-12 col-sm-6 col-lg-4">
+                <a href="{{ url('/tool') }}" class="text-decoration-none text-dark">
+                    <div class="card menu-card shadow-sm text-center py-5">
+                        <div class="card-body">
+                            <i class="bi bi-tools menu-icon mb-3"></i>
+                            <h5 class="fw-semibold">Tool</h5>
+                            <p class="text-muted mb-0 small">Surat Tugas, Notulen, Sertifikat &amp; Nomor Surat</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+
             @if (Auth::user()->role == 1 || Auth::user()->is_admin_kepegawaian)
                 <div class="col-12 col-sm-6 col-lg-4">
                     <a href="{{ url('/kepegawaian') }}" class="text-decoration-none text-dark">

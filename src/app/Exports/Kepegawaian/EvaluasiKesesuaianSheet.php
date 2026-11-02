@@ -86,6 +86,7 @@ class EvaluasiKesesuaianSheet implements Export, FromCollection, ShouldAutoSize,
             'PEGAWAI NEGERI SIPIL' => 'PNS',
             'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA' => 'PPPK',
             'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA PARUH WAKTU' => 'PPPK Paruh Waktu',
+            \App\Models\Kepegawaian\PegawaiProfil::STATUS_PENDAMPING => 'Pendamping',
             default => $status,
         };
     }

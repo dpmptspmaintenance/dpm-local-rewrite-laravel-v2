@@ -23,11 +23,12 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Rekap cuti tahunan per pegawai, pivot per tahun: satu pasang kolom
- * Terpakai/Sisa (mandiri, tanpa bawaan) untuk tahun berjalan dan dua tahun
- * sebelumnya, plus satu kolom Total yang menggabungkan ketiganya (tahun lama
- * dibatasi kontribusi Cuti::MAX_BAWAAN, tahun terakhir penuh). Tabel dan
- * export melewati Cuti::rekapTahunan() dengan daftar tahun yang sama, jadi
- * angkanya tak bisa beda.
+ * Terpakai/Sisa untuk tahun berjalan dan dua tahun sebelumnya, plus satu
+ * kolom Total yang menggabungkan ketiganya (tahun lama dibatasi kontribusi
+ * Cuti::MAX_BAWAAN, tahun terakhir penuh). Sisa tahun yang minus langsung
+ * 0 dan hutangnya memotong tahun depan (lihat Cuti::rekapTahunan).
+ * Tabel dan export melewati Cuti::rekapTahunan() dengan daftar tahun yang
+ * sama, jadi angkanya tak bisa beda.
  */
 class CutiTahunanRekap extends Page implements HasActions, HasSchemas, HasTable
 {
@@ -153,11 +154,14 @@ class CutiTahunanRekap extends Page implements HasActions, HasSchemas, HasTable
     }
 
     /**
-     * Satu pasang kolom Terpakai/Sisa per tahun. Sisa MANDIRI (jatah tahun itu
-     * dikurangi terpakai tahun itu saja) — tidak menumpuk bawaan dari tahun
-     * sebelumnya; penggabungan antar tahun ada di kolom Total terpisah.
+     * Satu pasang kolom Terpakai/Sisa per tahun. Sisa = jatah tahun itu
+     * dikurangi terpakai tahun itu, DIBAYAR hutang tahun sebelumnya bila ada
+     * (tahun minus tampil 0, kecuali tahun terakhir yang tampil apa adanya
+     * sebagai hutang berjalan) — tidak menumpuk surplus dari tahun
+     * sebelumnya; tahun selain terakhir tampil maksimal 6 (batas bawaan ke
+     * Total). Penggabungan antar tahun ada di kolom Total terpisah.
      *
-     * @param  int[]  $tahun
+     * @param  int[]  $tahun  tahun yang ditampilkan (urutan bebas, diurutkan di dalam)
      * @return TextColumn[]
      */
     private function kolomTahun(array $tahun): array
@@ -195,10 +199,11 @@ class CutiTahunanRekap extends Page implements HasActions, HasSchemas, HasTable
     /**
      * Angka-angka yang dijumlahkan jadi Total, SEBELUM ditambahkan — mis.
      * "2 + 6 + 9". Tahun-tahun sebelum yang terakhir sudah dipotong ke
-     * Cuti::MAX_BAWAAN (kalau sisa mandirinya lebih besar), tahun terakhir
-     * ditulis apa adanya; harus identik dengan penjumlahan yang menghasilkan
-     * total_sisa di Cuti::rekapTahunan() supaya kolom ini tak pernah beda
-     * dari kolom Total di sebelahnya.
+     * Cuti::MAX_BAWAAN (kalau sisanya lebih besar; sisa sudah memotong
+     * hutang tahun sebelumnya), tahun terakhir ditulis apa adanya; harus
+     * identik dengan penjumlahan yang menghasilkan total_sisa di
+     * Cuti::rekapTahunan() supaya kolom ini tak pernah beda dari kolom
+     * Total di sebelahnya.
      *
      * @param  array<string, mixed>  $record
      * @param  int[]  $tahun

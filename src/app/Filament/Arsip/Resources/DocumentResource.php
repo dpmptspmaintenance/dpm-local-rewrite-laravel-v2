@@ -13,7 +13,6 @@ use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Radio;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
@@ -161,25 +160,19 @@ class DocumentResource extends Resource
                         ->label('Berkas Tersimpan')
                         ->dehydrated(false),
 
-                    Repeater::make('new_berkas')
-                        ->label('Berkas')
-                        ->helperText(fn (): string => 'Berkas lama tampil di atas (ikon tempat sampah untuk menghapus). Tekan "Tambah Berkas" untuk mengunggah berkas baru — bisa banyak sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
-                        ->addActionLabel('Tambah Berkas')
-                        ->defaultItems(0)
-                        ->minItems(0)
-                        ->schema([
-                            FileUpload::make('file')
-                                ->label('Berkas')
-                                ->storeFiles(false)
-                                ->acceptedFileTypes(self::acceptedMimeTypes())
-                                ->maxSize(config('arsip.max_upload_kb'))
-                                // Preview bawaan Filament sangat tinggi (1 file
-                                // bisa 1 halaman) — pakai panel ringkas.
-                                ->panelLayout('compact')
-                                ->panelAspectRatio('6:1')
-                                ->imagePreviewHeight('70')
-                                ->required(),
-                        ]),
+                    FileUpload::make('new_berkas')
+                        ->label('Tambah Berkas Baru')
+                        ->helperText(fn (): string => 'Berkas lama tampil di atas (ikon tempat sampah untuk menghapus). Pilih satu atau banyak berkas sekaligus untuk ditambahkan. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
+                        ->multiple()
+                        ->maxFiles(50)
+                        ->storeFiles(false)
+                        ->acceptedFileTypes(self::acceptedMimeTypes())
+                        ->maxSize(config('arsip.max_upload_kb'))
+                        // Preview bawaan Filament sangat tinggi (1 file bisa
+                        // 1 halaman) — pakai panel ringkas.
+                        ->panelLayout('compact')
+                        ->panelAspectRatio('6:1')
+                        ->imagePreviewHeight('70'),
                 ]),
 
             TextInput::make('title')

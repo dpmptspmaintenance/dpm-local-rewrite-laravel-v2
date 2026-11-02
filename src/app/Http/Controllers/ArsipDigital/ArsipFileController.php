@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ArsipDigital;
 
 use App\Models\DocumentFile;
 use App\Models\Kepegawaian\PegawaiArsip;
+use App\Models\Kepegawaian\SatpamArsip;
 use App\Services\ArsipDigital\LocalArsipStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -61,6 +62,28 @@ class ArsipFileController
             $pegawaiArsip->original_filename ?: basename($pegawaiArsip->storage_path),
             $pegawaiArsip->mime_type ?: 'application/octet-stream',
             $pegawaiArsip->file_extension,
+        );
+    }
+
+    public function showSatpamArsip(Request $request, SatpamArsip $satpamArsip): StreamedResponse
+    {
+        $user = $request->user();
+
+        abort_if($user === null, 403);
+        abort_unless(
+            $user->isArsipAdmin() || (bool) $user->is_admin_kepegawaian,
+            403,
+        );
+        abort_unless(
+            $satpamArsip->storage_path && $this->storage->exists($satpamArsip->storage_path),
+            404,
+        );
+
+        return $this->stream(
+            $satpamArsip->storage_path,
+            $satpamArsip->original_filename ?: basename($satpamArsip->storage_path),
+            $satpamArsip->mime_type ?: 'application/octet-stream',
+            $satpamArsip->file_extension,
         );
     }
 

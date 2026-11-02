@@ -137,6 +137,99 @@ docker exec -w /var/www dpmptsp-app php -r '...generateDocx...'   # atau service
 # lalu unzip word/document.xml via python, cari "thinThickSmallGap" harus 0 dan pBdr tepat 1
 ```
 
-### 7. Beranda (`resources/views/dashboard.blade.php`) — Modul Aktif
+## 6. Modul Kepegawaian — Generator Sertifikat (`/kepegawaian/generator-sertifikat`)
+
+Halaman Livewire tunggal untuk: unggah gambar template, isi data Excel, tarik field ke kanvas, pratinjau per baris, unduh PDF satuan/batch (ZIP per 25).
+
+### 1. Berkas Utama
+- `src/app/Filament/Kepegawaian/Pages/CertificateGenerator.php` — halaman editor + state + autosave + unduh.
+- `src/app/Filament/Kepegawaian/Pages/ManageCertificates.php` — daftar "Template Sertifikat".
+- `src/resources/views/filament/kepegawaian/pages/certificate-generator.blade.php` — kanvas Alpine + CSS + dialog Excel.
+- `src/app/Services/Certificate/{CertificateExcelParser,CertificateRenderer,CertificateNamingService}.php`.
+- `src/app/Models/Certificate/*` + migrasi `2026_10_27_000240_create_certificate_generator_tables.php`.
+- Route background privat: `kepegawaian.certificate.background` (`CertificateBackgroundController`, token base64 + cek ownership).
+- `CertificateGenerator::shouldRegisterNavigation()` = `false`; menu hanya "Template Sertifikat".
+- Buka template via `?template={id}` memakai `#[\Livewire\Attributes\Url(as: 'template')] public ?int $openTemplate`. **Jangan kosongkan di `mount()`** — query string akan hilang dan refresh jadi mode create.
+
+### 2. Data Excel Terpisah dari Form (WAJIB)
+- Form template hanya berisi `title`, `file_name_pattern`, `background`. **Tidak ada** `FileUpload::make('excel')`.
+- Data Excel dikelola lewat dialog: properti `showExcelDialog`, `excelUpload`, `pendingExcelHeaders/Keys/Rows/Name`, `datasetDirty`; method `openExcelDialog()`, `closeExcelDialog()`, `updatedExcelUpload()`, `applyExcelDialog()`, `clearExcelData()`.
+- Dialog menampilkan **semua baris** (scroll, header sticky). Saat edit template, `openExcelDialog()` mengisi `pending*` dari `$this->rows/$this->headers/$this->keys` sehingga data lama langsung terlihat.
+- Dataset ditulis ke DB lewat `replaceDatasetForTemplate()` (hapus dataset lama, insert ulang) — dipanggil dari `applyExcelDialog()` via `persistDatasetSilently()` dan dari `save()` (hanya bila `$isNew` atau `datasetDirty`).
+- `save()` tidak lagi menerima `CertificateExcelParser`; validasi memakai `$this->headers/keys/rows`.
+- **CSS dialog wajib kelas sendiri (`.cert-modal-*`)**, bukan utility Tailwind. Build CSS Filament yang terpasang tidak memuat semua utility (`fixed inset-0`, `z-50`, dll), akibatnya popup tampil sebagai blok biasa di bawah halaman.
+
+### 3. Header (Label) vs Key (Slug) Dataset
+- `CertificateExcelParser` mengembalikan `headers` (label asli, mis. `Nama Lengkap`) dan `keys` (slug, mis. `nama_lengkap`). Baris data memakai **keys**.
+- Halaman menyimpan keduanya: `public array $headers` dan `public array $keys`. Chip kolom, `addField()`/`addFieldAt()`, dan `labelForKey()` **wajib memakai `$keys`** (label hanya untuk tampilan). Dulu chip memakai label sehingga field baru tidak menemukan data → teks kosong di mode *show*.
+- `applyDataset()` menerima `(headers, keys, rows, rowCount)` dan memanggil `normalizeFieldKeysToDataset()` untuk memetakan field lama berkey label (`Nama`) ke key slug (`nama`).
+- Saat memuat template lama, `keys` diturunkan dari `array_keys($rows[0])`; bila dataset kosong, dari `Str::slug($header, '_')`.
+
+### 4. Renderer PDF (`CertificateRenderer`) — Jebakan
+- **`cssFont()` wajib memakai kutip TUNGGAL** (`'DejaVu Sans', sans-serif`). Style disisipkan ke atribut `style="..."`; nama font berkutip ganda menutup atribut lebih awal sehingga `font-size` hilang dan teks tercetak 12pt meski setting 36pt. Style juga di-`htmlspecialchars()` sebelum disisipkan.
+- `fitText()` mengecilkan font bertahap (min 50%) hanya bila estimasi baris × line-height melebihi tinggi field.
+- Dompdf `chroot` harus mencakup `storage/app/private/certificate/tmp` **dan** `storage_path('app/private')`; kalau tidak, background tidak muncul. `tempDir()` di `storage/app/private/certificate/tmp`.
+- Posisi/ukuran field dalam mm absolut; kanvas hanya skala zoom.
+
+### 5. Simpan Otomatis & Unduh
+- Autosave senyap: `persistFieldsSilently()` dipanggil dari `addFieldAt`, `updateFieldGeometry`, `updateFieldProperties`, `removeField` (tanpa notifikasi).
+- **Sebelum unduh, `persistDraftBeforeDownload()` dipanggil** di awal `downloadSingle()` dan `downloadRange()`: menyimpan judul, pola nama berkas, dan seluruh field terkini, lalu template dibaca ulang dari DB. Tanpa ini PDF memakai setting lama.
+- Batch dibatasi 25 PDF per klik (`downloadBatchRangeAction()` + `downloadRange()`); Nginx `fastcgi_read_timeout`/`fastcgi_send_timeout` = 180s.
+- Modal aksi halaman butuh `<x-filament-actions::modals />` di akhir blade (layout page hanya merender otomatis untuk tabel).
+
+### 6. Kanvas (Alpine `certCanvas`)
+- `pxPerMm` **tetap** `96 / 25.4`. Jangan mengukur ulang dari lebar render (fungsi `measure()` sudah dihapus): lebar halaman sudah dikali zoom, jadi pengukuran ulang membuat zoom berlipat dan kanvas terasa "auto zoom" saat state berubah.
+- Zoom hanya dari slider (default 70%).
+- Drag di area kosong halaman = **pan/scroll** viewport (`startPan/movePan/endPan`, kelas `.is-panning`), bukan memindah field; klik tanpa geser tetap `select(null)`.
+- Garis bantu tengah: dua garis putus-putus (`.cert-guide-v/h`) muncul saat drag/resize atau chip dragover; menyala hijau + snap tepat ke tengah bila selisih ≤ 2 mm. `dragInfo` menampilkan x/y/titik tengah (mm).
+- `uid` field harus dibuat **sebelum** `x-for` (IIFE `initialFields`); `pendingGeometry` mencegah blink saat drag.
+- `wire:ignore` **hanya** pada `.cert-viewport`; toolbar/bar pratinjau jangan di dalamnya.
+- Layout: `.cert-editor-grid` = 3:1 pada ≥1280px. Kolom kanan (`.cert-editor-side`) **selalu dirender**; bila belum ada field terpilih tampilkan card kosong `.cert-props-empty` agar tidak "hilang-muncul".
+
+### 7. Cara Uji (Livewire, tanpa PHPUnit Assert)
+`PHPUnit\Framework\Assert` tidak tersedia di container, jadi hindari `assertOk()`/`fillForm()`.
+```php
+$t = Livewire::withQueryParams(['template' => 9])->test(CertificateGenerator::class);
+$t->call('openExcelDialog');
+$t->set('pendingExcelKeys', ['nama'])->call('applyExcelDialog');
+```
+- State form di-set via `$t->set('data.title', '...')`, bukan `fillForm()`.
+- Uji action: `$t->mountAction('x'); $t->set('mountedActions.0.data.fields', [...]); $effects = $t->call('callMountedAction')->effects;` (download ada di `$effects['download']['content']`, base64).
+- Render PDF diverifikasi dengan `pdftotext -bbox` (tersedia di container) — tinggi glyph harus sebanding `font-size`.
+- Setelah menulis file: `rm -f storage/framework/views/*.php; chown -R www-data:www-data storage bootstrap/cache`, lalu jalankan artisan sebagai `www-data`.
+
+## 7. Modul Kepegawaian — Unduh Pegawai (`/kepegawaian/pegawai`)
+
+- Tombol header **Unduh Pegawai** di `PegawaiProfilResource\Pages\ListPegawaiProfil::getHeaderActions()` membuka modal berisi `CheckboxList` semua field (`PegawaiFieldsExport::LABELS`, 44 field), 3 kolom, `searchable()`, `bulkToggleable()` (centang/hapus-centang semua), default `nip, nama, jabatan`.
+- Export: `src/app/Exports/Kepegawaian/PegawaiFieldsExport.php` (`FromQuery`). Urutan kolom mengikuti urutan `LABELS`, bukan urutan centang. Nama berkas `data-pegawai-YYYYmmdd-His.xlsx`.
+- Data mengikuti pencarian/filter tabel aktif dan **semua baris** (tanpa paginasi): `getFilteredTableQuery()`.
+- **Field virtual** `nama_kapital` memakai accessor `getNamaKapitalAttribute()` (kapital tiap kata, gelar/singkatan utuh). Field virtual tidak boleh masuk `SELECT`; gunakan `PegawaiFieldsExport::databaseColumns()` yang juga menambahkan kolom sumber `nama`.
+- Guard sort: kolom sort tabel bisa berupa agregat (`kompetensi_count`, `anak_count`) yang bukan kolom DB — jatuhkan ke `nama` bila tidak ada di `LABELS`.
+- Kolom `masa_kerja_*` bukan kolom DB (dihitung), jangan dipakai untuk `orderBy`/`select`.
+
+## 8. Beranda (`resources/views/dashboard.blade.php`) — Modul Aktif
 Saat ini hanya modul **Arsip Digital** (semua user), **Kepegawaian** (`role == 1 || is_admin_kepegawaian`), dan **Add User** (`role == 1`) yang ditampilkan. Modul lain (Rapat Kita, Barang Kita/Smart Stok, Data Kita, Sikenut, Botman, Bot Manager, Siperdafit) **di-hide dengan komentar Blade** `{{-- ... --}}` — kode tetap utuh, jangan dihapus. Untuk menampilkan kembali cukup hapus pembungkus komentarnya.
+
+## 9. API Generator Surat Cuti — Chrome Extension (`/api/v1/generator-surat-cuti`)
+
+Hasil API **harus identik** dengan halaman Generator Surat Cuti UI. Satu-satunya sumber kebenaran: `SuratCutiGeneratorService::susun()` (parse, duplikat, potong sisa, nomor). Halaman **dan** controller API sama-sama memanggilnya — jangan duplikasi aturan di controller/page lain.
+
+### 1. Auth & Scope
+- Tanpa Sanctum (sengaja, tanpa dependensi baru). Autentikasi via middleware `api.key` (`app/Http/Middleware/AuthenticateApiKey.php`): header `X-API-Key` (atau `Authorization: Bearer`), hash SHA-256 dicocokkan ke `kepegawaian.api_keys.key_hash`.
+- Model `App\Models\ApiKey` (koneksi `kepegawaian`): `terbitkan()` mengembalikan `[model, plaintext]` — plaintext hanya ada sekali, jangan log/disimpan ulang.
+- Kunci dibuat/dicabut di panel Kepegawaian → Master → **API Key** (`ApiKeys.php` + `api-keys.blade.php`; blade juga memuat dokumentasi endpoint untuk pembuat extension).
+- Scope tunggal: `generator-cuti`. Rate limit `throttle:60,1`.
+- CORS: `config/cors.php` mengizinkan `chrome-extension://*` (`allowed_origins_patterns`); tanpa cookie/credentials.
+
+### 2. Endpoint (prefix `/api/v1`, lihat `routes/api.php`)
+- `GET generator-surat-cuti/berikutnya?kode=800` → `{nomor_awal, tahun, import_hari_ini}`. Nomor awal = sekuens bulan terbaru + 1 di `cuti.no_surat` **dan** `riwayat_generator_cuti` (non-duplikat) — panggilan beruntun tidak dapat nomor kembar.
+- `GET generator-surat-cuti/pegawai?q=` → lookup `nip, nama, status_pegawai, jabatan` (maks 25).
+- `POST generator-surat-cuti` → terima `teks` (tempelan mentah) ATAU `rows[]` (`nama, jenis, hari, tanggal_mulai, tanggal_selesai?, pengajuan_at`); validasi → `susun()` → simpan batch riwayat (`sumber='extension'`) → respons 201 berisi `hasil` (nomor, sisa, flag duplikat), `duplikat`, `tak_dikenali`, `nomor_berikutnya`.
+- Gate `Cuti::sudahImporHariIni()` berlaku juga di API (bisa dilepas per-request via `"abaikan_gate": true`). Cek duplikat silang riwayat opsional via `"cek_riwayat": true` (default mati).
+- Maks 200 rincian/request. Respons error: 401 (kunci salah/dicabut), 403 (scope), 409 `belum_impor`, 422 (validasi), 429 (limit).
+
+### 3. Batasan Keras
+- **Jangan tulis ke tabel `cuti`** dari API — hanya `riwayat_generator_cuti` (kolom `sumber`, `sumber_label`, `teks_mentah`, `is_duplikat`). Verifikasi: hitung baris `cuti` sebelum/sesudah uji.
+- Migrasi API: `2026_10_30_000003_create_api_keys_table.php`, `2026_10_30_000004_add_sumber_to_riwayat_generator_cuti.php` (keduanya guarded `hasTable`/`hasColumn`; APP_ENV=production → berikan SQL ke user, jangan `migrate`).
+- UI Generator Surat Cuti memakai `simpanRiwayatBatch()` yang sama (sumber `manual`); duplikat tidak memotong sisa dua kali; baris duplikat tidak punya nomor.
 

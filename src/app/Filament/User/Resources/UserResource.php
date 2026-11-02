@@ -66,6 +66,20 @@ class UserResource extends Resource
     ];
 
     /**
+     * Pilihan Status Jabatan. Key = nilai yang disimpan di DB (kolom
+     * users.status_jabatan), value = label tampil. 'PENDAMPING' adalah
+     * Tenaga Pendamping.
+     *
+     * @var array<string, string>
+     */
+    public const STATUS_JABATAN = [
+        'PNS' => 'PNS',
+        'PPPK' => 'PPPK',
+        'Staff' => 'Staff',
+        'PENDAMPING' => 'Tenaga Pendamping',
+    ];
+
+    /**
      * Menu keys for the shared_pages access toggle, ported verbatim from
      * UserController::DAFTAR_MENU.
      *
@@ -101,9 +115,9 @@ class UserResource extends Resource
             TextInput::make('bidang')
                 ->label('Bidang')
                 ->maxLength(100),
-            TextInput::make('status_jabatan')
+            Select::make('status_jabatan')
                 ->label('Status Jabatan')
-                ->maxLength(100),
+                ->options(self::STATUS_JABATAN),
             TextInput::make('nip')
                 ->label('NIP')
                 ->maxLength(100),

@@ -7,7 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class Cuti extends Model
 {
@@ -23,6 +23,31 @@ class Cuti extends Model
 
     /** Batas atas saldo (sisa) cuti yang bisa ditampilkan/dimiliki. */
     public const MAX_SISA = 24;
+
+    /**
+     * Penanda impor cuti terakhir (tanggal Y-m-d). Ditulis setiap impor
+     * sukses — dipakai gerbang "wajib impor hari ini" (mis. Generator Surat
+     * Cuti). Cache bisa hilang saat optimize:clear, jadi
+     * sudahImporHariIni() juga menerima bukti sisi data (ada baris yang
+     * created_at-nya hari ini).
+     */
+    public const IMPORT_HARIAN_CACHE_KEY = 'cuti:impor-harian-terakhir';
+
+    public static function tandaiImporHariIni(): void
+    {
+        Cache::put(self::IMPORT_HARIAN_CACHE_KEY, now()->toDateString(), now()->endOfDay());
+    }
+
+    public static function sudahImporHariIni(): bool
+    {
+        if (Cache::get(self::IMPORT_HARIAN_CACHE_KEY) === now()->toDateString()) {
+            return true;
+        }
+
+        $terakhir = self::query()->max('created_at');
+
+        return $terakhir !== null && Carbon::parse($terakhir)->isToday();
+    }
 
     const UPDATED_AT = null;
 
@@ -140,6 +165,22 @@ class Cuti extends Model
     ];
 
     /**
+     * Apakah jenis cuti ini memotong jatah tahunan untuk status pegawai
+     * tersebut. Aturan sama seperti rekap: "Cuti Tahunan" selalu memotong;
+     * "Cuti Karena Alasan Penting" hanya untuk PPPK/PPPK paruh waktu;
+     * Sakit/Melahirkan/Besar tidak memotong jatah tahunan siapa pun.
+     */
+    public static function memotongJatah(string $jenis, ?string $statusPegawai): bool
+    {
+        if (strcasecmp(trim($jenis), 'Cuti Tahunan') === 0) {
+            return true;
+        }
+
+        return strcasecmp(trim($jenis), 'Cuti Karena Alasan Penting') === 0
+            && in_array($statusPegawai, self::STATUS_ALASAN_PENTING_MEMOTONG, true);
+    }
+
+    /**
      * Rekap cuti tahunan per pegawai, satu pasang kolom Terpakai/Sisa per tahun
      * PLUS satu kolom Total.
      *
@@ -147,11 +188,18 @@ class Cuti extends Model
      * Penting" khusus PPPK/PPPK paruh waktu (lihat
      * STATUS_ALASAN_PENTING_MEMOTONG) — PNS tidak dipotong oleh jenis itu.
      *
-     * Tiap kolom Sisa {y} MANDIRI — jatah[y] dikurangi terpakai[y] tahun itu
-     * saja, tidak menumpuk bawaan dari tahun sebelumnya (jadi tiap kolom bisa
-     * dibaca berdiri sendiri: "tahun ini sisa segini").
+     * "Sisa" tahun berjalan = jatah[y] − terpakai[y], DIBAYAR DULU bila tahun
+     * sebelumnya minus (hutang): minus tahun lalu langsung memotong tahun
+     * ini, dan tahun yang minus tampil 0 (bukan negatif) — kecuali tahun
+     * TERAKHIR yang tampil apa adanya (hutang berjalan, belum ada tahun
+     * depannya di jendela). Tampil tahun selain terakhir DIBATASI maksimal 6
+     * (sama seperti batas kontribusinya ke Total). Surplus TIDAK dibawa
+     * (tetap per tahun). Rantai dihitung dari tahun paling awal yang ada
+     * datanya supaya hutang lama tetap terbawa walau jendela tampil bergeser.
      *
-     *   sisa[y] = jatah[y] - terpakai[y]
+     *   sisa[y] = jatah[y] − terpakai[y] + min(sisa[y−1], 0)
+     *   tampil[y] = sisa[y] bila y tahun terakhir,
+     *              else min(max(sisa[y], 0), 6)
      *
      * Kolom Total-lah yang menggabungkan semua tahun yang ditampilkan:
      * tahun-tahun SELAIN yang terakhir kontribusinya dibatasi MAX_BAWAAN
@@ -159,18 +207,25 @@ class Cuti extends Model
      * min(negatif, N) = negatif itu sendiri); tahun terakhir kontribusi penuh
      * apa adanya. Hasil akhirnya dibatasi MAX_SISA.
      *
-     *   total = Σ min(sisa[y], MAX_BAWAAN) untuk y bukan tahun terakhir
-     *         + sisa[tahun terakhir]
+     *   total = Σ min(tampil[y], MAX_BAWAAN) untuk y bukan tahun terakhir
+     *         + tampil[tahun terakhir]
      *   total = min(total, MAX_SISA)
      *
      * Contoh terverifikasi (3 tahun 2024/2025/2026, jatah 12/tahun, pakai
-     * 10/1/3 hari): sisa mandiri = 2/11/9, total = min(2,6) + min(11,6) + 9
-     * = 2 + 6 + 9 = 17.
+     * 10/1/3 hari): tampil 2/6/9, total = 2 + 6 + 9 = 17.
+     *
+     * Contoh hutang (2025 −3, 2026 mandiri 8): tampil 2025 = 0,
+     * 2026 = 8 − 3 = 5.
      *
      * @param  int[]  $tahun  tahun yang ditampilkan (urutan bebas, diurutkan di dalam)
+     * @param  array<string, array<int, int>>  $tambahanPakai  pemakaian hipotetis
+     *     tambahan per NIP per tahun (nip => [tahun => hari]) — mis. dari
+     *     Generator Surat Cuti agar sisa tampil sudah dikurangi pengajuan
+     *     yang baru dinomori (belum masuk DB). Aturan potong (jenis apa
+     *     untuk status apa) ditentukan pemanggil via memotongJatah().
      * @return Collection<int, array<string, mixed>> satu baris per pegawai
      */
-    public static function rekapTahunan(array $tahun): Collection
+    public static function rekapTahunan(array $tahun, array $tambahanPakai = []): Collection
     {
         $tahunTampil = array_map('intval', $tahun);
         sort($tahunTampil);
@@ -196,16 +251,15 @@ class Cuti extends Model
         // karena "Cuti Karena Alasan Penting" cuma ikut memotong utk sebagian
         // status_pegawai (lihat STATUS_ALASAN_PENTING_MEMOTONG); jenis mana
         // yang dijumlah ditentukan per-nip di loop bawah setelah tahu status.
-        // Hanya baris yang mulai DAN selesai di tahun takwim yang sama (baris
-        // lintas tahun diabaikan), dan hanya tahun yang ditampilkan — kolom
-        // Sisa mandiri, jadi tak butuh histori di luar itu. Match nip persis:
-        // prefix-fuzzy tak menambah hasil (dicek — prefix 14/15/16 digit
-        // menghasilkan set NIP tercocok yang sama persis dengan exact match
-        // untuk data saat ini).
+        // SELURUH tahun diambil (bukan cuma yang ditampilkan): rantai hutang
+        // butuh tahun-tahun sebelum jendela tampil. Hanya baris yang mulai
+        // DAN selesai di tahun takwim yang sama (baris lintas tahun
+        // diabaikan). Match nip persis: prefix-fuzzy tak menambah hasil
+        // (dicek — prefix 14/15/16 digit menghasilkan set NIP tercocok yang
+        // sama persis dengan exact match untuk data saat ini).
         $terpakai = self::query()
             ->whereIn('jenis', ['Cuti Tahunan', 'Cuti Karena Alasan Penting'])
             ->whereIn('nip', $nipList)
-            ->whereIn(DB::raw('YEAR(tanggal_mulai_diajukan)'), $tahunTampil)
             ->whereRaw('YEAR(tanggal_mulai_diajukan) = YEAR(tanggal_selesai_diajukan)')
             ->selectRaw('nip')
             ->selectRaw('jenis')
@@ -226,7 +280,6 @@ class Cuti extends Model
 
         $kuota = CutiKuotaTahunan::query()
             ->whereIn('nip', $nipList)
-            ->whereIn('tahun', $tahunTampil)
             ->get()
             ->groupBy('nip');
 
@@ -261,6 +314,13 @@ class Cuti extends Model
                 ->groupBy('tahun')
                 ->map(fn (Collection $rows) => $rows->sum('hari'));
 
+            // Tambahan hipotetis (belum tercatat di DB) — digabung sebelum
+            // rantai hutang supaya aturannya ikut berlaku penuh.
+            foreach ($tambahanPakai[$nip] ?? [] as $thnTambahan => $hariTambahan) {
+                $thnTambahan = (int) $thnTambahan;
+                $hariPerTahun[$thnTambahan] = (int) ($hariPerTahun->get($thnTambahan) ?? 0) + (int) $hariTambahan;
+            }
+
             $kuotaPerTahun = $kuota->get($nip, collect())->pluck('kuota_hari', 'tahun');
 
             $digitNip = preg_replace('/\D+/', '', (string) $nip);
@@ -273,15 +333,36 @@ class Cuti extends Model
                 'status_jabatan' => $statusJabatan,
             ];
 
+            // Rantai hutang dari tahun paling awal yang ada datanya
+            // (terpakai/kuota) sampai tahun terakhir tampil — tahun tanpa
+            // data mandiri penuh (jatah − 0) sehingga tak mengubah rantai.
+            $tahunAdaData = $hariPerTahun->keys()->merge($kuotaPerTahun->keys())->map(fn ($y) => (int) $y);
+            $awalRantai = min(array_merge($tahunTampil, $tahunAdaData->all() ?: $tahunTampil));
+
+            $rantai = [];
+            $bawaan = 0; // sisa tahun sebelumnya (negatif = hutang dibawa)
+
+            for ($y = $awalRantai; $y <= $tahunTerakhir; $y++) {
+                $jatah = (int) ($kuotaPerTahun->get($y) ?? self::KUOTA_TAHUNAN);
+                $pakai = (int) ($hariPerTahun->get($y) ?? 0);
+                $mentah = $jatah - $pakai + min($bawaan, 0);
+                $rantai[$y] = ['jatah' => $jatah, 'pakai' => $pakai, 'mentah' => $mentah];
+                $bawaan = $mentah;
+            }
+
             $totalGabungan = 0;
 
             foreach ($tahunTampil as $y) {
-                $jatah = (int) ($kuotaPerTahun->get($y) ?? self::KUOTA_TAHUNAN);
-                $pakai = (int) ($hariPerTahun->get($y) ?? 0);
-                $sisa = $jatah - $pakai;
+                $r = $rantai[$y];
+                // Tahun yang minus langsung 0 dan hutangnya memotong tahun
+                // depan; tahun terakhir tampil apa adanya (hutang berjalan
+                // yang belum ada tahun depannya di jendela). Tahun selain
+                // terakhir tampil maksimal 6 (batas bawaan ke Total).
+                $mentah = $y === $tahunTerakhir ? $r['mentah'] : max(0, $r['mentah']);
+                $sisa = $y === $tahunTerakhir ? $mentah : min($mentah, self::MAX_BAWAAN);
 
-                $record['jatah_'.$y] = $jatah;
-                $record['total_hari_'.$y] = $pakai;
+                $record['jatah_'.$y] = $r['jatah'];
+                $record['total_hari_'.$y] = $r['pakai'];
                 $record['sisa_hari_'.$y] = $sisa;
 
                 $totalGabungan += ($y === $tahunTerakhir) ? $sisa : min($sisa, self::MAX_BAWAAN);

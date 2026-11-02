@@ -63,9 +63,26 @@ class PegawaiProfil extends Model
      * Nama tampil Capitalize Each Word, TANPA merusak gelar/singkatan:
      *   "RISTA AMELIA ADHI, S.STP., M.M." -> "Rista Amelia Adhi, S.STP., M.M."
      *   "AHMAD ROSIDIN, S.IP"             -> "Ahmad Rosidin, S.IP"
-     * Token yang mengandung titik (S.Kom, M.M.) atau singkatan pendek huruf
-     * kapital (ST, MM) dibiarkan apa adanya; sisanya di-title-case.
+     *   "EKO SURANTO, S.Kom"              -> "Eko Suranto, S.Kom"
+     *
+     * Aturan per token (dipisah spasi, tanda baca menempel dipertahankan):
+     * - Token bergelar setelah koma pertama (S.Kom, ST, MT, Akt, ...) selalu
+     *   dibiarkan apa adanya.
+     * - Token nama inti (sebelum koma pertama) di-title-case, KECUALI:
+     *   token bertitik (Drs.), inisial 1 huruf (W), angka Romawi (II, III),
+     *   atau singkatan gelar tanpa titik yang menempel tanpa koma (SP, ST).
+     *   Pengecualian terakhir ini yang membedakan "EKO" (nama -> "Eko")
+     *   dari "SP" (gelar -> tetap "SP").
      */
+    private const NAMA_KAPITAL_GELAR_TANPA_TITIK = [
+        'ST', 'MT', 'SS', 'SE', 'MM', 'SH', 'MH', 'SP', 'MP', 'SIP', 'SKM',
+    ];
+
+    private const NAMA_KAPITAL_ROMAWI = [
+        'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+        'XI', 'XII', 'XIII', 'XIV', 'XV',
+    ];
+
     public function getNamaKapitalAttribute(): string
     {
         $nama = trim((string) $this->nama);
@@ -75,12 +92,42 @@ class PegawaiProfil extends Model
         }
 
         $kata = preg_split('/\s+/', $nama) ?: [];
+        $lewatKoma = false;
 
-        $hasil = array_map(function (string $token): string {
-            $polos = trim($token, ".,;");
-
-            if (str_contains($token, '.') || (mb_strlen($polos) <= 3 && $polos !== '' && mb_strtoupper($polos) === $polos)) {
+        $hasil = array_map(function (string $token) use (&$lewatKoma): string {
+            // Bagian gelar (setelah koma pertama): biarkan apa adanya.
+            if ($lewatKoma) {
                 return $token;
+            }
+
+            $polos = trim($token, ".,;");
+            $atas = mb_strtoupper($polos, 'UTF-8');
+
+            $akhirInti = str_contains($token, ',');
+
+            if ($akhirInti) {
+                $lewatKoma = true;
+            }
+
+            if ($polos === '') {
+                return $token;
+            }
+
+            // Gelar bertitik (Drs., S.Kom, A.Md.) — jangan disentuh.
+            if (str_contains($token, '.')) {
+                return $token;
+            }
+
+            // Inisial satu huruf (mis. "W" pada "RONNY W,") — kapital saja.
+            if (mb_strlen($polos) === 1 && ctype_alpha($polos)) {
+                return str_replace($polos, $atas, $token);
+            }
+
+            // Angka Romawi (II, III, IV, ...) dan singkatan gelar tanpa
+            // titik (SP, ST, MT, ...) — pertahankan kapital.
+            if (in_array($atas, self::NAMA_KAPITAL_ROMAWI, true)
+                || in_array($atas, self::NAMA_KAPITAL_GELAR_TANPA_TITIK, true)) {
+                return str_replace($polos, $atas, $token);
             }
 
             return mb_convert_case($token, MB_CASE_TITLE, 'UTF-8');
@@ -189,20 +236,23 @@ class PegawaiProfil extends Model
     }
 
     /**
-     * Set pencocokan NIP pengguna aktif (users.is_aktif = 1), di-cache per
-     * request. Kolom is_aktif hanya ada di data_local.users, bukan di sini,
-     * jadi keaktifan pegawai ditentukan lewat pencocokan NIP: cocok persis,
+     * Cache pencocokan NIP pengguna aktif (per request). Keaktifan pegawai
+     * tidak disimpan di tabel ini — kolom is_aktif hanya ada di
+     * data_local.users, jadi ditentukan lewat pencocokan NIP: cocok persis,
      * kalau gagal cocok 15 digit pertama (NIP di users kadang tanpa 3 digit
      * sufiks).
      *
+     * @var array{exact: array<string, true>, prefix15: array<string, true>}|null
+     */
+    private static ?array $aktifUsersNipCache = null;
+
+    /**
      * @return array{exact: array<string, true>, prefix15: array<string, true>}
      */
     private static function aktifUsersNip(): array
     {
-        static $cache = null;
-
-        if ($cache !== null) {
-            return $cache;
+        if (self::$aktifUsersNipCache !== null) {
+            return self::$aktifUsersNipCache;
         }
 
         $exact = [];
@@ -223,7 +273,64 @@ class PegawaiProfil extends Model
             }
         }
 
-        return $cache = ['exact' => $exact, 'prefix15' => $prefix15];
+        return self::$aktifUsersNipCache = ['exact' => $exact, 'prefix15' => $prefix15];
+    }
+
+    /**
+     * Buang cache keaktifan — WAJIB dipanggil setelah menonaktifkan /
+     * mengaktifkan akun supaya badge & filter tidak menampilkan data lama
+     * pada request yang sama.
+     */
+    public static function forgetAktifCache(): void
+    {
+        self::$aktifUsersNipCache = null;
+    }
+
+    /**
+     * Akun pengguna (tabel users) yang NIP-nya cocok dengan pegawai ini.
+     * Dipakai halaman detail untuk menampilkan status akun & tombol
+     * aktif/nonaktif.
+     */
+    public function akun(): ?\App\Models\User
+    {
+        return self::userForNip((string) $this->nip);
+    }
+
+    public static function userForNip(?string $nip): ?\App\Models\User
+    {
+        $digit = preg_replace('/\D+/', '', (string) $nip);
+
+        if ($digit === '') {
+            return null;
+        }
+
+        $users = \App\Models\User::query()
+            ->whereNotNull('nip')
+            ->where('nip', '!=', '')
+            ->get(['id', 'nip', 'is_aktif']);
+
+        foreach ($users as $user) {
+            if (preg_replace('/\D+/', '', (string) $user->nip) === $digit) {
+                return $user;
+            }
+        }
+
+        if (strlen($digit) >= 15) {
+            $prefix = substr($digit, 0, 15);
+
+            foreach ($users as $user) {
+                if (preg_replace('/\D+/', '', (string) $user->nip) === $prefix) {
+                    return $user;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public function isAkunAktif(): bool
+    {
+        return (bool) $this->akun()?->is_aktif;
     }
 
     /** Apakah NIP ini milik pengguna aktif (is_aktif = 1)? */
@@ -262,6 +369,15 @@ class PegawaiProfil extends Model
 
     /** Status pegawai PPPK paruh waktu. */
     public const STATUS_PPPK_PARUH_WAKTU = 'PEGAWAI PEMERINTAH DENGAN PERJANJIAN KERJA PARUH WAKTU';
+
+    /**
+     * Status Tenaga Pendamping (non-ASN, tanpa NIP 18 digit — NIP sintetis
+     * "PENDAMPING-xxxxx" supaya bisa punya akun & tampil di modul ini).
+     * BUKAN bagian STATUS_NON_PNS: bukan ASN sehingga tak ikut alert
+     * pensiun/BUP, tak dihitung PPPK di masaKerjaTeks, dan tak masuk
+     * kandidat penghargaan (SLKS khusus PNS).
+     */
+    public const STATUS_PENDAMPING = 'TENAGA PENDAMPING';
 
     /** Semua status pegawai non-PNS yang punya batas usia (BUP/BUT). */
     public const STATUS_NON_PNS = [self::STATUS_PPPK, self::STATUS_PPPK_PARUH_WAKTU];
@@ -494,7 +610,7 @@ class PegawaiProfil extends Model
         $drhByNip = DrhSatyaLancana::query()
             ->whereIn('nip', $nipList)
             ->orderByDesc('created_at')
-            ->get(['nip', 'status', 'created_at'])
+            ->get(['nip', 'status', 'created_at', 'tahun_diusulkan'])
             ->groupBy('nip')
             ->map(fn (Collection $rows) => $rows->first());
 
@@ -562,7 +678,13 @@ class PegawaiProfil extends Model
 
             // DRH Satya Lancana terbaru untuk pegawai ini (bila ada).
             $drh = $drhByNip->get($nip);
-            $drhTahun = $drh?->created_at?->year;
+            // tahun_diusulkan (kolom "Kapan Diusulkan" diisi staf saat input
+            // DRH) — dipakai sebagai tahun pengajuan resmi. Fallback ke
+            // created_at->year kalau kolom kosong (DRH lama sebelum field
+            // ditambahkan).
+            $drhTahun = filled($drh?->tahun_diusulkan)
+                ? (int) $drh->tahun_diusulkan
+                : $drh?->created_at?->year;
             $drhDalamJendela = $drhTahun !== null
                 && $drhTahun >= ((int) now()->year - self::JENDELA_PENGUSULAN_TAHUN);
 

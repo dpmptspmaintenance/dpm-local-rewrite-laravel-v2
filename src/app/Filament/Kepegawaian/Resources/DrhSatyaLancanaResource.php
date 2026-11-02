@@ -200,6 +200,34 @@ class DrhSatyaLancanaResource extends Resource
         return $out;
     }
 
+    /**
+     * Opsi dropdown "Pegawai" — PNS saja (Satya Lancana Karya Satya tidak
+     * berlaku untuk PPPK/PPPK Paruh Waktu). NIP yang sudah tersimpan di
+     * record tetap disertakan walau bukan PNS, supaya halaman edit tidak
+     * kehilangan label pilihan.
+     *
+     * @return array<string, string>
+     */
+    public static function opsiPegawaiPns(?string $nipTersimpan = null): array
+    {
+        $options = PegawaiProfil::query()
+            ->where('status_pegawai', PegawaiProfil::STATUS_PNS)
+            ->orderBy('nama')
+            ->get(['nip', 'nama'])
+            ->mapWithKeys(fn (PegawaiProfil $p): array => [$p->nip => "{$p->nama} ({$p->nip})"])
+            ->all();
+
+        if (filled($nipTersimpan) && ! array_key_exists($nipTersimpan, $options)) {
+            $p = PegawaiProfil::query()->find($nipTersimpan);
+
+            if ($p) {
+                $options[$p->nip] = "{$p->nama} ({$p->nip})";
+            }
+        }
+
+        return $options;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -209,11 +237,9 @@ class DrhSatyaLancanaResource extends Resource
                 ->schema([
                     Select::make('nip')
                         ->label('Pegawai')
-                        ->options(fn (): array => PegawaiProfil::query()
-                            ->orderBy('nama')
-                            ->get(['nip', 'nama'])
-                            ->mapWithKeys(fn (PegawaiProfil $p): array => [$p->nip => "{$p->nama} ({$p->nip})"])
-                            ->all())
+                        // Satya Lancana Karya Satya hanya untuk PNS (PP 25/1994)
+                        // — PPPK/PPPK Paruh Waktu tak diusulkan lewat DRH ini.
+                        ->options(fn (?DrhSatyaLancana $record): array => self::opsiPegawaiPns($record?->nip))
                         ->searchable()
                         ->required()
                         ->live()
@@ -242,7 +268,7 @@ class DrhSatyaLancanaResource extends Resource
 
             Section::make('Status Usulan')
                 ->description('Tahap pengajuan DRH ini. Default "Draft" saat baru dibuat.')
-                ->columns(1)
+                ->columns(2)
                 ->schema([
                     ToggleButtons::make('status')
                         ->label('Status Usulan')
@@ -250,6 +276,14 @@ class DrhSatyaLancanaResource extends Resource
                         ->colors(DrhSatyaLancana::STATUS_COLORS)
                         ->inline()
                         ->default(DrhSatyaLancana::STATUS_DRAFT)
+                        ->required(),
+                    TextInput::make('tahun_diusulkan')
+                        ->label('Kapan Diusulkan')
+                        ->numeric()
+                        ->minValue(2000)
+                        ->maxValue((int) now()->addYears(5)->year)
+                        ->default((string) now()->year)
+                        ->helperText('Tahun pengajuan usulan. Default tahun ini, bisa diubah (mis. 2025).')
                         ->required(),
                 ]),
 
@@ -446,12 +480,14 @@ class DrhSatyaLancanaResource extends Resource
     {
         return $schema->components([
             Section::make('Status Usulan')
+                ->columns(2)
                 ->schema([
                     TextEntry::make('status')
                         ->label('Status')
                         ->badge()
                         ->formatStateUsing(fn (string $state): string => DrhSatyaLancana::STATUSES[$state] ?? $state)
                         ->color(fn (string $state): string => DrhSatyaLancana::STATUS_COLORS[$state] ?? 'gray'),
+                    TextEntry::make('tahun_diusulkan')->label('Tahun Usulan')->placeholder('—'),
                 ]),
             Section::make('Identitas')
                 ->columns(2)
@@ -526,6 +562,10 @@ class DrhSatyaLancanaResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => DrhSatyaLancana::STATUSES[$state] ?? $state)
                     ->color(fn (string $state): string => DrhSatyaLancana::STATUS_COLORS[$state] ?? 'gray')
+                    ->sortable(),
+                TextColumn::make('tahun_diusulkan')
+                    ->label('Tahun Usulan')
+                    ->placeholder('—')
                     ->sortable(),
                 TextColumn::make('jabatan_terakhir')->label('Jabatan')->placeholder('—')->wrap()->toggleable(),
                 TextColumn::make('pangkat_golongan')->label('Pangkat/Gol.')->placeholder('—')->toggleable(),

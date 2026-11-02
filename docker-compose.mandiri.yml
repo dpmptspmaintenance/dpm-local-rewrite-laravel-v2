@@ -1,0 +1,73 @@
+# Compose MANDIRI: app + web + db dalam satu stack, bisa jalan tanpa
+# database luar. Dipakai lewat ./jalan.sh (jangan dipakai bersamaan dengan
+# docker-compose.yml bila port-nya bentrok — stack ini pakai 8080 & 3307).
+#
+# Rahasia & nama database dibaca dari ./docker/mandiri.env (lihat
+# docker/mandiri.env.example). File src/.env TIDAK diubah — env di sini
+# menang atas .env untuk nama host/port saja, sisanya dari mandiri.env.
+services:
+  db:
+    image: mysql:8.0
+    container_name: dpmptsp-db
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rahasia}
+    ports:
+      - "3307:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - dpmptsp
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-rahasia}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: ./docker/php
+    container_name: dpmptsp-app
+    restart: unless-stopped
+    working_dir: /var/www
+    env_file:
+      - ./docker/mandiri.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      KEPEGAWAIAN_DB_HOST: db
+      KEPEGAWAIAN_DB_PORT: 3306
+      PERSEDIAAN_DB_HOST: db
+      PERSEDIAAN_DB_PORT: 3306
+      BANGKIT_DB_HOST: db
+      BANGKIT_DB_PORT: 3306
+    volumes:
+      - ./src:/var/www
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dpmptsp
+
+  web:
+    image: nginx:alpine
+    container_name: dpmptsp-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - dpmptsp
+
+networks:
+  dpmptsp:
+    driver: bridge
+
+volumes:
+  dbdata:

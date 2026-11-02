@@ -20,7 +20,24 @@ class SuratTugasPegawai extends Model
 
     protected $casts = [
         'urutan' => 'integer',
+        'override_dihilangkan' => 'boolean',
     ];
+
+    /** Nama efektif di dokumen: koreksi manual bila ada, selain itu snapshot. */
+    public function namaDokumen(): string
+    {
+        return (string) ($this->override_nama ?? $this->nama);
+    }
+
+    public function jabatanDokumen(): ?string
+    {
+        return $this->override_jabatan ?? $this->jabatan;
+    }
+
+    public function pangkatGolonganDokumen(): ?string
+    {
+        return $this->override_pangkat_golongan ?? $this->pangkat_golongan;
+    }
 
     public function suratTugas(): BelongsTo
     {

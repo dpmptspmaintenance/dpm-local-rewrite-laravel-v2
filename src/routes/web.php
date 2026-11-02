@@ -465,6 +465,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('arsip.berkas.document-file');
     Route::get('/kepegawaian/arsip-berkas/{pegawaiArsip}', [ArsipFileController::class, 'showPegawaiArsip'])
         ->name('arsip.berkas.pegawai-arsip');
+    Route::get('/kepegawaian/arsip-berkas-satpam/{satpamArsip}', [ArsipFileController::class, 'showSatpamArsip'])
+        ->name('arsip.berkas.satpam-arsip');
 
     // Pratinjau inline PDF DRH Satya Lancana (dibuka di tab baru, bukan unduh).
     Route::get('/kepegawaian/drh-satya-lancana/{drh}/pdf', [\App\Http\Controllers\Kepegawaian\DrhSatyaLancanaPdfController::class, 'show'])
@@ -475,4 +477,34 @@ Route::middleware('auth')->group(function (): void {
     // Pratinjau inline berkas gabungan (merge) DRH.
     Route::get('/kepegawaian/drh-satya-lancana/{drh}/gabungan', [\App\Http\Controllers\Kepegawaian\DrhSatyaLancanaPdfController::class, 'showMerge'])
         ->name('kepegawaian.drh-satya-lancana.gabungan');
+
+    // Pratinjau inline PDF Surat Tugas (dibuka di tab baru, bukan unduh).
+    Route::get('/kepegawaian/surat-tugas/{suratTugas}/pdf', [\App\Http\Controllers\Kepegawaian\SuratTugasPdfController::class, 'show'])
+        ->name('kepegawaian.surat-tugas.pdf');
+    // Unduh Word Surat Tugas dari snapshot dokumen (hasil koreksi manual).
+    Route::get('/kepegawaian/surat-tugas/{suratTugas}/word', [\App\Http\Controllers\Kepegawaian\SuratTugasPdfController::class, 'word'])
+        ->name('kepegawaian.surat-tugas.word');
+
+    // Editor Word di browser (Surat Tugas Word, panel Tool). Berkas mentah
+    // untuk SuperDoc + simpan hasil edit + generate ulang dari data.
+    Route::get('/tool/surat-tugas-word/{suratTugas}/docx', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'show'])
+        ->name('tool.surat-tugas-word.docx');
+    Route::post('/tool/surat-tugas-word/{suratTugas}/docx', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'store'])
+        ->name('tool.surat-tugas-word.save');
+    Route::post('/tool/surat-tugas-word/{suratTugas}/regenerate', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'regenerate'])
+        ->name('tool.surat-tugas-word.regenerate');
+    Route::post('/tool/surat-tugas-word/debug', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'debug'])
+        ->name('tool.surat-tugas-word.debug');
+
+    // Gambar background template Generator Sertifikat (disk privat).
+    Route::get('/tool/certificate/background/{path}', [\App\Http\Controllers\Tool\CertificateBackgroundController::class, 'show'])
+        ->name('tool.certificate.background');
+    // Berkas TTF Master Font untuk @font-face kanvas preview sertifikat.
+    Route::get('/tool/certificate/font/{font}/{variant}', [\App\Http\Controllers\Tool\CertificateFontController::class, 'show'])
+        ->whereIn('variant', ['regular', 'bold', 'italic', 'bold_italic'])
+        ->name('tool.certificate.font');
+
+    // Pratinjau inline PDF Notulen (dibuka di tab baru, bukan unduh).
+    Route::get('/kepegawaian/notulen/{notulen}/pdf', [\App\Http\Controllers\Kepegawaian\NotulenPdfController::class, 'show'])
+        ->name('kepegawaian.notulen.pdf');
 });

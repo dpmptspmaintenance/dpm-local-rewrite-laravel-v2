@@ -9,8 +9,8 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 /**
  * Resume jumlah pegawai per status kepegawaian (PNS / PPPK / PPPK Paruh
- * Waktu) di atas tabel daftar pegawai. Label panjang status dari SISDM
- * diringkas agar kartu tetap ringkas.
+ * Waktu / Tenaga Pendamping) di atas tabel daftar pegawai. Label panjang
+ * status dari SISDM diringkas agar kartu tetap ringkas.
  *
  * Tiap kartu bisa diklik: mengarah ke daftar pegawai dengan filter
  * status_pegawai sudah terpasang (lewat query param `filters`, sama dengan
@@ -52,11 +52,13 @@ class PegawaiStatusOverview extends StatsOverviewWidget
         $pns = (int) $jumlah->get(PegawaiProfil::STATUS_PNS, 0);
         $pppk = (int) $jumlah->get(PegawaiProfil::STATUS_PPPK, 0);
         $pppkParuhWaktu = (int) $jumlah->get(PegawaiProfil::STATUS_PPPK_PARUH_WAKTU, 0);
+        $pendamping = (int) $jumlah->get(PegawaiProfil::STATUS_PENDAMPING, 0);
 
         $lainnya = (int) $jumlah->except([
             PegawaiProfil::STATUS_PNS,
             PegawaiProfil::STATUS_PPPK,
             PegawaiProfil::STATUS_PPPK_PARUH_WAKTU,
+            PegawaiProfil::STATUS_PENDAMPING,
         ])->sum();
 
         $stats = [
@@ -83,11 +85,17 @@ class PegawaiStatusOverview extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-clock')
                 ->color('gray')
                 ->url($this->urlFilterStatus(PegawaiProfil::STATUS_PPPK_PARUH_WAKTU)),
+
+            Stat::make('Pendamping', $pendamping)
+                ->description('Tenaga Pendamping')
+                ->descriptionIcon('heroicon-m-hand-raised')
+                ->color('primary')
+                ->url($this->urlFilterStatus(PegawaiProfil::STATUS_PENDAMPING)),
         ];
 
         if ($lainnya > 0) {
             $stats[] = Stat::make('Status Lain', $lainnya)
-                ->description('Status di luar PNS/PPPK')
+                ->description('Status di luar kategori utama')
                 ->descriptionIcon('heroicon-m-question-mark-circle')
                 ->color('warning');
         }
