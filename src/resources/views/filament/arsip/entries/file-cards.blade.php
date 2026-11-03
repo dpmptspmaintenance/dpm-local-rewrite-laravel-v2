@@ -8,16 +8,26 @@
         @forelse ($files as $file)
             @php
                 $isImage = $file->isImage();
+                $isLink = $file->isLink();
                 $url = $file->openUrl();
-                $label = $file->original_filename ?: basename((string) $file->storage_path);
-                $type = strtoupper((string) $file->file_extension) ?: '—';
-                $size = ($file->file_size ?? 0) > 0
-                    ? number_format($file->file_size / 1024, 1, ',', '.').' KB'
-                    : '—';
+                $label = $isLink
+                    ? ($file->link_title ?: $file->google_web_view_link)
+                    : ($file->original_filename ?: basename((string) $file->storage_path));
+                $type = $isLink ? 'TAUTAN' : (strtoupper((string) $file->file_extension) ?: '—');
+                $size = $isLink
+                    ? parse_url((string) $file->google_web_view_link, PHP_URL_HOST)
+                    : (($file->file_size ?? 0) > 0
+                        ? number_format($file->file_size / 1024, 1, ',', '.').' KB'
+                        : '—');
             @endphp
 
             <div style="min-width:0; border:1px solid rgb(229 231 235); border-radius:8px; padding:8px; background:#fff; display:flex; flex-direction:column; gap:8px;">
-                @if ($isImage)
+                @if ($isLink)
+                    <a href="{{ $url }}" target="_blank" title="{{ $label }}" style="display:flex; align-items:center; gap:8px; padding:10px 12px; min-height:110px; box-sizing:border-box; border-radius:6px; background:rgb(240 249 255); border:1px dashed rgb(125 211 252);">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px; height:20px; flex-shrink:0; color:rgb(2 132 199);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        <span title="{{ $label }}" style="min-width:0; font-size:13px; word-break:break-word;">{{ $label }}</span>
+                    </a>
+                @elseif ($isImage)
                     <a href="{{ $url }}" target="_blank" title="{{ $label }}" style="display:block; border-radius:6px; overflow:hidden; background:rgb(249 250 251);">
                         <img
                             src="{{ $url }}"

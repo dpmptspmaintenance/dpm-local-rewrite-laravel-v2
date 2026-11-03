@@ -85,6 +85,13 @@ Modul Arsip Digital menggunakan Filament Panel di `/arsip` dengan arsitektur pen
    - Pengguna biasa **tidak dapat mengubah ownership** setelah dokumen diunggah (field disabled pada halaman edit).
    - Admin / Superadmin bebas menentukan atau mengubah ownership kapan saja (pada form create, edit, maupun Dashboard Verifikasi / `ReviewQueue`).
 
+### Konsep Berkas Campuran (file + tautan)
+Satu dokumen bisa berisi berkas fisik (multiple upload) DAN tautan berjudul (multiple repeater URL+judul) sekaligus — radio pemisah "Unggah Berkas / Tempel Tautan" sudah dihapus. Tautan disimpan sebagai baris `document_files` (`google_web_view_link` + `link_title`, `storage_path` null; deteksi via `DocumentFile::isLink()`).
+- `source_type`: `file` (hanya berkas), `url` (hanya tautan / dokumen url lama), `both` (`Document::SOURCE_BOTH`, campuran). Dihitung ulang otomatis oleh `DocumentService::tipeCampuran()` setiap tambah/hapus baris.
+- Create: `createWithFilesAndLinks()` (satu transaksi; judul kosong → fallback nama file pertama / judul tautan pertama). Edit: `addFiles()` + `addLinks()`; hapus baris via `removeFile()` (fisik hapus disk, tautan langsung hapus DB).
+- View: kartu berkas vs kartu tautan (badge TAUTAN); controller file redirect ke URL asli untuk baris tautan (tetap cek `canAccessDocument`).
+- Migrasi: `2026_11_03_000001_add_link_title_to_document_files_table` (guarded `hasColumn`; APP_ENV=production → berikan SQL ke user, jangan `migrate`).
+
 ---
 
 ## 5. Modul Kepegawaian — Tool Notulen Maker (`/kepegawaian/notulen`) & Generator Word/PDF
@@ -136,6 +143,19 @@ Contoh cepat verifikasi layout kop (deteksi jumlah garis):
 docker exec -w /var/www dpmptsp-app php -r '...generateDocx...'   # atau service
 # lalu unzip word/document.xml via python, cari "thinThickSmallGap" harus 0 dan pBdr tepat 1
 ```
+
+### 7. Editor Word di Browser (Notulen & Surat Tugas)
+
+Editor dokumen ada di panel Tool: `/tool/notulen/{id}/word` dan `/tool/surat-tugas-word` (halaman Filament `EditWordNotulen` / `EditWordSuratTugas`, `shouldRegisterNavigation = false`).
+
+- **Dua tab**: `Pratinjau PDF` (default) dan `Edit Kanvas`. Pratinjau = iframe route PDF (`kepegawaian.notulen.pdf` / `kepegawaian.surat-tugas.pdf`) yang dirender LibreOffice dari snapshot — **identik dengan Cetak/Unduh**. Kanvas SuperDoc dimuat lazy saat tab Edit diklik.
+- **Bedanya kanvas**: SuperDoc punya mesin layout sendiri; ukuran halaman benar (dibaca dari `pgSz`), tetapi paginasi baris bisa beda dari Word/LibreOffice. Jangan jadikan kanvas acuan hasil akhir — acuan = Cetak/Unduh.
+- **Generate Ulang** me-reload halaman (bukan `superdoc.replaceFile()`) karena `replaceFile()` tidak menerapkan ulang `pgSz`; tanpa reload kanvas bisa tetap A4 walau berkas baru folio. Simpan (save) me-refresh iframe pratinjau.
+- **Cetak** = ekspor kanvas (edit belum disimpan ikut) → `POST /tool/{notulen,surat-tugas}-word/{id}/print` → PDF LibreOffice dibuka di tab baru (tekan `Ctrl+P`).
+- Berkas: `NotulenWordController` / `SuratTugasWordController` (`show`, `store`, `print`, `regenerate`, `debug`), boot JS `public/vendor/superdoc/nw-boot.js` / `stw-boot.js` (global `__nwBooted` vs `__stwBooted`), snapshot service `NotulenDocumentService` / `SuratTugasDocumentService` (`materialize`, `regenerate`, `replaceSnapshot`, `renderPdf`).
+- Snapshot notulen butuh kolom `document_*` (migrasi `2026_11_03_000002_add_document_snapshot_to_notulen_table`, guarded `hasColumn`; APP_ENV=production → berikan SQL ke user).
+- Template `notulen.docx` = folio (`<w:pgSz w:w="12189" w:h="18709"/>`), sama dengan `surat-tugas.docx`.
+- Berkas snapshot di disk `arsip` harus dimiliki `www-data`; bila pernah diedit sebagai root, `chown -R www-data:www-data storage/arsip` agar simpan/regenerate tidak 500 (`UnableToWriteFile`).
 
 ## 6. Modul Kepegawaian — Generator Sertifikat (`/kepegawaian/generator-sertifikat`)
 

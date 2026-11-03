@@ -6,7 +6,7 @@ use App\Filament\Tool\Resources\NotulenResource\Pages;
 use App\Models\Kepegawaian\Notulen;
 use App\Models\Kepegawaian\PegawaiProfil;
 use App\Models\User;
-use App\Services\Kepegawaian\NotulenGeneratorService;
+use App\Services\Kepegawaian\NotulenDocumentService;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -25,7 +25,6 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class NotulenResource extends Resource
@@ -362,19 +361,25 @@ class NotulenResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
+                Action::make('edit_word')
+                    ->label('Edit Word')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('gray')
+                    ->url(fn (Notulen $record): string => Pages\EditWordNotulen::getUrl(['record' => $record])),
+
                 Action::make('download_docx')
                     ->label('Word')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('info')
                     ->tooltip('Unduh berkas Word (.docx)')
                     ->action(function (Notulen $record): BinaryFileResponse {
-                        $path = app(NotulenGeneratorService::class)->generateDocx($record);
+                        $documents = app(NotulenDocumentService::class);
+                        $path = $documents->materialize($record);
 
                         return response()
-                            ->download($path, Str::slug($record->judul).'.docx', [
+                            ->download($path, $documents->downloadName($record, 'docx'), [
                                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            ])
-                            ->deleteFileAfterSend(true);
+                            ]);
                     }),
 
                 Action::make('download_pdf')
@@ -403,6 +408,7 @@ class NotulenResource extends Resource
             'create' => Pages\CreateNotulen::route('/create'),
             'view' => Pages\ViewNotulen::route('/{record}'),
             'edit' => Pages\EditNotulen::route('/{record}/edit'),
+            'word' => Pages\EditWordNotulen::route('/{record}/word'),
         ];
     }
 

@@ -21,41 +21,60 @@
                 <span class="stw-toolbar-title">{{ $surat->judul }}</span>
             </div>
             <div class="stw-toolbar-right">
-                <span class="stw-status" data-stw-status>Belum ada perubahan</span>
+                {{-- Tombol editor hanya relevan di tab Edit. --}}
+                <span class="stw-status" data-stw-status data-stw-edit-only>Belum ada perubahan</span>
                 <x-filament::button type="button" color="gray" icon="heroicon-o-arrow-path"
-                    data-stw-action="regenerate"
+                    data-stw-action="regenerate" data-stw-edit-only
                     wire:confirm="Generate ulang dari data surat? Semua koreksi tata letak di editor akan hilang.">
                     Generate Ulang
                 </x-filament::button>
+                <x-filament::button type="button" color="gray" icon="heroicon-o-printer"
+                    data-stw-action="print" data-stw-edit-only>
+                    Cetak
+                </x-filament::button>
                 <x-filament::button type="button" color="gray" icon="heroicon-o-arrow-down-tray"
-                    data-stw-action="download">
+                    data-stw-action="download" data-stw-edit-only>
                     Unduh Word
                 </x-filament::button>
                 <x-filament::button type="button" icon="heroicon-o-check" data-stw-action="save"
-                    wire:loading.attr="disabled">
+                    data-stw-edit-only wire:loading.attr="disabled">
                     Simpan Dokumen
                 </x-filament::button>
             </div>
         </div>
 
-        <div class="stw-sd-toolbar" id="stw-sd-toolbar" wire:ignore></div>
-        <div class="stw-editor-shell">
-            <div id="stw-editor" class="stw-editor" wire:ignore></div>
-            <div class="stw-loading" data-stw-loading>
-                <x-filament::loading-indicator class="h-6 w-6" />
-                <span>Memuat dokumen…</span>
-            </div>
+        <div class="stw-tabs" role="tablist">
+            <button type="button" class="stw-tab is-active" data-stw-tab="preview">Pratinjau PDF</button>
+            <button type="button" class="stw-tab" data-stw-tab="edit">Edit Kanvas</button>
         </div>
 
-        <p class="stw-hint">
-            Editor berjalan sepenuhnya di browser — dokumen tidak dikirim ke layanan pihak ketiga.
-            Perubahan tersimpan sebagai dokumen resmi surat ini, sehingga PDF &amp; unduhan Word memakai versi terbaru.
-        </p>
+        {{-- Pratinjau memakai PDF yang sama persis dengan hasil Cetak/Unduh
+             (renderer LibreOffice), bukan mesin layout SuperDoc. --}}
+        <div class="stw-panel" data-stw-panel="preview">
+            <iframe id="stw-preview" class="stw-preview" title="Pratinjau PDF"
+                src="{{ $config['pdfUrl'] }}"></iframe>
+        </div>
+
+        <div class="stw-panel" data-stw-panel="edit" hidden>
+            <div class="stw-sd-toolbar" id="stw-sd-toolbar" wire:ignore></div>
+            <div class="stw-editor-shell">
+                <div id="stw-editor" class="stw-editor" wire:ignore></div>
+                <div class="stw-loading" data-stw-loading>
+                    <x-filament::loading-indicator class="h-6 w-6" />
+                    <span>Memuat dokumen…</span>
+                </div>
+            </div>
+
+            <p class="stw-hint">
+                Kanvas SuperDoc adalah alat edit — paginasinya bisa sedikit berbeda dari Word.
+                Hasil resmi selalu dari Cetak/Unduh (LibreOffice).
+            </p>
+        </div>
 
     {{-- Skrip editor dimuat sebagai module biasa (bukan @script Livewire)
          supaya pasti jalan setelah bundle SuperDoc dimuat. --}}
     <script type="application/json" id="stw-config">@json($config)</script>
-    <script type="module" src="{{ asset('vendor/superdoc/stw-boot.js') . '?v=6' }}"></script>
+    <script type="module" src="{{ asset('vendor/superdoc/stw-boot.js') . '?v=7' }}"></script>
     @endif
 
     @assets
@@ -98,6 +117,37 @@
         }
         .dark .stw-toolbar-title { color: #f3f4f6; }
         .stw-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+        .stw-tabs {
+            display: flex;
+            gap: .25rem;
+            margin-bottom: .75rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .dark .stw-tabs { border-color: #374151; }
+        .stw-tab {
+            padding: .45rem .9rem;
+            font-size: .85rem;
+            font-weight: 600;
+            color: #6b7280;
+            background: transparent;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+        }
+        .stw-tab.is-active { color: #111827; border-bottom-color: #f59e0b; }
+        .dark .stw-tab { color: #9ca3af; }
+        .dark .stw-tab.is-active { color: #f3f4f6; }
+
+        .stw-preview {
+            width: 100%;
+            height: 78vh;
+            min-height: 32rem;
+            border: 1px solid #e5e7eb;
+            border-radius: .5rem;
+            background: #f3f4f6;
+        }
+        .dark .stw-preview { border-color: #374151; background: #1f2937; }
         .stw-status { font-size: .8rem; color: #6b7280; white-space: nowrap; }
         .dark .stw-status { color: #9ca3af; }
         .stw-status[data-tone="ok"] { color: #15803d; }

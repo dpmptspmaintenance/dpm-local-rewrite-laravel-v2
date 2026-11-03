@@ -493,6 +493,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('tool.surat-tugas-word.save');
     Route::post('/tool/surat-tugas-word/{suratTugas}/regenerate', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'regenerate'])
         ->name('tool.surat-tugas-word.regenerate');
+    Route::post('/tool/surat-tugas-word/{suratTugas}/print', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'print'])
+        ->name('tool.surat-tugas-word.print');
     Route::post('/tool/surat-tugas-word/debug', [\App\Http\Controllers\Tool\SuratTugasWordController::class, 'debug'])
         ->name('tool.surat-tugas-word.debug');
 
@@ -507,4 +509,20 @@ Route::middleware('auth')->group(function (): void {
     // Pratinjau inline PDF Notulen (dibuka di tab baru, bukan unduh).
     Route::get('/kepegawaian/notulen/{notulen}/pdf', [\App\Http\Controllers\Kepegawaian\NotulenPdfController::class, 'show'])
         ->name('kepegawaian.notulen.pdf');
+    // Unduh Word Notulen dari snapshot dokumen (hasil koreksi manual).
+    Route::get('/kepegawaian/notulen/{notulen}/word', [\App\Http\Controllers\Kepegawaian\NotulenPdfController::class, 'word'])
+        ->name('kepegawaian.notulen.word');
+
+    // Editor Word di browser (Notulen Word, panel Tool). Berkas mentah
+    // untuk SuperDoc + simpan hasil edit + generate ulang dari data.
+    Route::get('/tool/notulen-word/{notulen}/docx', [\App\Http\Controllers\Tool\NotulenWordController::class, 'show'])
+        ->name('tool.notulen-word.docx');
+    Route::post('/tool/notulen-word/{notulen}/docx', [\App\Http\Controllers\Tool\NotulenWordController::class, 'store'])
+        ->name('tool.notulen-word.save');
+    Route::post('/tool/notulen-word/{notulen}/regenerate', [\App\Http\Controllers\Tool\NotulenWordController::class, 'regenerate'])
+        ->name('tool.notulen-word.regenerate');
+    Route::post('/tool/notulen-word/{notulen}/print', [\App\Http\Controllers\Tool\NotulenWordController::class, 'print'])
+        ->name('tool.notulen-word.print');
+    Route::post('/tool/notulen-word/debug', [\App\Http\Controllers\Tool\NotulenWordController::class, 'debug'])
+        ->name('tool.notulen-word.debug');
 });

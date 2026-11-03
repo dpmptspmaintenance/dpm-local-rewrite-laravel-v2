@@ -4,12 +4,11 @@ namespace App\Filament\Tool\Resources\NotulenResource\Pages;
 
 use App\Filament\Tool\Resources\NotulenResource;
 use App\Models\Kepegawaian\Notulen;
-use App\Services\Kepegawaian\NotulenGeneratorService;
+use App\Services\Kepegawaian\NotulenDocumentService;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ViewNotulen extends ViewRecord
@@ -20,6 +19,11 @@ class ViewNotulen extends ViewRecord
     {
         return [
             EditAction::make(),
+            Action::make('edit_word')
+                ->label('Edit Word')
+                ->icon('heroicon-o-pencil-square')
+                ->color('gray')
+                ->url(fn (): string => EditWordNotulen::getUrl(['record' => $this->getRecord()])),
             Action::make('download_docx')
                 ->label('Download Word')
                 ->icon('heroicon-o-document-arrow-down')
@@ -27,13 +31,13 @@ class ViewNotulen extends ViewRecord
                 ->action(function (): BinaryFileResponse {
                     /** @var Notulen $record */
                     $record = $this->getRecord();
-                    $path = app(NotulenGeneratorService::class)->generateDocx($record);
+                    $documents = app(NotulenDocumentService::class);
+                    $path = $documents->materialize($record);
 
                     return response()
-                        ->download($path, Str::slug($record->judul).'.docx', [
+                        ->download($path, $documents->downloadName($record, 'docx'), [
                             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                        ])
-                        ->deleteFileAfterSend(true);
+                        ]);
                 }),
             Action::make('download_pdf')
                 ->label('Download PDF')

@@ -69,6 +69,7 @@ class EditWordSuratTugas extends Page
             'docxUrl' => route('tool.surat-tugas-word.docx', $surat),
             'saveUrl' => route('tool.surat-tugas-word.save', $surat),
             'regenerateUrl' => route('tool.surat-tugas-word.regenerate', $surat),
+            'printUrl' => route('tool.surat-tugas-word.print', $surat),
             'downloadUrl' => route('kepegawaian.surat-tugas.word', $surat),
             'pdfUrl' => route('kepegawaian.surat-tugas.pdf', $surat),
             'fileName' => $this->downloadNameFor($surat),
@@ -76,7 +77,7 @@ class EditWordSuratTugas extends Page
             'userEmail' => (string) (auth()->user()?->email ?? ''),
             'assetsBase' => asset('vendor/superdoc/assets'),
             'debugUrl' => route('tool.surat-tugas-word.debug'),
-            'bootVersion' => 'v5',
+            'bootVersion' => 'v7',
         ];
     }
 

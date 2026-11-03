@@ -8,6 +8,7 @@ use App\Models\Kepegawaian\SatpamArsip;
 use App\Services\ArsipDigital\LocalArsipStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -24,12 +25,20 @@ class ArsipFileController
 {
     public function __construct(private readonly LocalArsipStorage $storage) {}
 
-    public function showDocumentFile(Request $request, DocumentFile $documentFile): StreamedResponse
+    public function showDocumentFile(Request $request, DocumentFile $documentFile): RedirectResponse|StreamedResponse
     {
         $user = $request->user();
         $document = $documentFile->document;
 
         abort_if($user === null || ! $user->canAccessDocument($document), 403);
+
+        // Baris tautan: alihkan langsung ke URL aslinya.
+        if ($documentFile->isLink()) {
+            abort_unless(filled($documentFile->google_web_view_link), 404);
+
+            return redirect()->away((string) $documentFile->google_web_view_link);
+        }
+
         abort_unless(
             $documentFile->storage_path && $this->storage->exists($documentFile->storage_path),
             404,

@@ -27,42 +27,30 @@ class CreateDocument extends CreateRecord
         $ownershipId = $data['ownership_id'] ?? null;
         $tagNames = $data['tag_names'] ?? [];
 
-        // Cabang mode URL: satu baris per baris teks di textarea `urls`.
-        if (($data['source_mode'] ?? \App\Models\Document::SOURCE_FILE) === \App\Models\Document::SOURCE_URL) {
-            $urls = collect(preg_split('/\r\n|\r|\n/', (string) ($data['urls'] ?? '')))
-                ->map(fn (string $line): string => trim($line))
-                ->filter()
-                ->unique()
-                ->take(100) // batasi supaya form tidak disalahgunakan jadi ribuan baris
-                ->values()
-                ->all();
+        $status = ($data['status'] ?? null) && \Illuminate\Support\Facades\Auth::user()->isArsipAdmin()
+            ? (string) $data['status']
+            : \App\Models\Document::STATUS_PENDING;
 
-            $result = DocumentResource::registerUrlBatch($urls, $title, $categoryId, $tagNames, $service, $ownershipId, $description);
-
-            if ($result['ids'] === []) {
-                throw new \RuntimeException(
-                    "Tidak ada dokumen yang berhasil didaftarkan.\n\n".implode("\n", $result['errors'])
-                );
-            }
-
-            return DocumentResource::getModel()::findOrFail($result['ids'][0]);
-        }
-
-        // Mode berkas: satu DOKUMEN dengan banyak baris berkas (repeater
-        // "Tambah Berkas" — konsep sama Surat Tugas: satu induk, banyak anak).
+        // Berkas fisik (multiple) + tautan berjudul (multiple) dalam SATU
+        // dokumen — boleh salah satu saja atau dua-duanya sekaligus.
         $files = DocumentResource::normalizeUploadedFiles($data['berkas'] ?? []);
+        $tautan = collect($data['tautan'] ?? [])
+            ->map(fn ($row): array => [
+                'url' => trim((string) ($row['url'] ?? '')),
+                'judul' => trim((string) ($row['judul'] ?? '')) ?: null,
+            ])
+            ->filter(fn (array $row): bool => $row['url'] !== '')
+            ->unique('url')
+            ->take(100)
+            ->values()
+            ->all();
 
-        if ($files === []) {
-            // Tidak ada berkas fisik: dokumen boleh dibuat tanpa berkas asalkan
-            // judul diisi (validasi form sudah memaksa judul wajib saat berkas
-            // & tautan sama-sama kosong). Judul jadi identitas dokumen.
+        if ($files === [] && $tautan === []) {
+            // Tanpa berkas/tautan: dokumen boleh dibuat tanpa lampiran
+            // asalkan judul diisi (validasi form sudah memaksa).
             if (blank($title)) {
                 throw new \RuntimeException('Judul dokumen wajib diisi bila tidak ada berkas/tautan.');
             }
-
-            $status = ($data['status'] ?? null) && \Illuminate\Support\Facades\Auth::user()->isArsipAdmin()
-                ? (string) $data['status']
-                : \App\Models\Document::STATUS_PENDING;
 
             $document = \App\Models\Document::create([
                 'title' => $title,
@@ -84,16 +72,9 @@ class CreateDocument extends CreateRecord
             return $document;
         }
 
-        // Admin/Superadmin boleh langsung memilih status (mis. "Terbit") saat
-        // unggah; staf biasa field status tidak tampil sehingga default
-        // Menunggu Verifikasi.
-        $status = ($data['status'] ?? null) && \Illuminate\Support\Facades\Auth::user()->isArsipAdmin()
-            ? (string) $data['status']
-            : \App\Models\Document::STATUS_PENDING;
+        $document = $service->createWithFilesAndLinks($files, $tautan, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId, $status, $description);
 
-        $document = $service->createWithFiles($files, \Illuminate\Support\Facades\Auth::user(), $categoryId, $title, $tagNames, $ownershipId, $status, $description);
-
-        // Terbit langsung: rapikan folder Drive (rename "YYYY-MM-DD - Judul").
+        // Terbit langsung: rapikan folder (rename "YYYY-MM-DD - Judul").
         if ($status === \App\Models\Document::STATUS_PUBLISHED) {
             $service->organizeOnPublish($document);
         }

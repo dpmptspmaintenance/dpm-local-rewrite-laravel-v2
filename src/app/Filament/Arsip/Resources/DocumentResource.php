@@ -12,14 +12,13 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Forms\Components\ViewField;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -30,7 +29,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class DocumentResource extends Resource
 {
@@ -89,17 +87,6 @@ class DocumentResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            Radio::make('source_mode')
-                ->label('Jenis Unggahan')
-                ->options([
-                    Document::SOURCE_FILE => 'Unggah Berkas',
-                    Document::SOURCE_URL => 'Tempel Tautan (Google Drive / Web)',
-                ])
-                ->default(Document::SOURCE_FILE)
-                ->inline()
-                ->live()
-                ->visibleOn('create'),
-
             FileUpload::make('berkas')
                 ->label('Berkas')
                 ->helperText(fn (): string => 'Pilih bisa banyak berkas sekaligus. Maks '.config('arsip.max_upload_kb').' KB per berkas. Format: '.implode(', ', config('arsip.allowed_extensions')))
@@ -108,17 +95,34 @@ class DocumentResource extends Resource
                 ->storeFiles(false)
                 ->acceptedFileTypes(self::acceptedMimeTypes())
                 ->maxSize(config('arsip.max_upload_kb'))
-                ->visible(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') !== Document::SOURCE_URL),
+                ->visibleOn('create'),
 
-            Textarea::make('urls')
-                ->label('Tautan Dokumen')
-                ->helperText('Satu URL per baris (boleh banyak baris sekaligus). Judul tiap tautan mengikuti segmen terakhir URL bila judul dikosongkan.')
-                ->rows(5)
-                ->visible(fn (string $operation, Get $get): bool => $operation === 'create' && $get('source_mode') === Document::SOURCE_URL),
+            Repeater::make('tautan')
+                ->label('Tautan (opsional — bisa banyak, masing-masing berjudul)')
+                ->helperText('Tambah baris per tautan. Judul dikosongkan = mengikuti segmen terakhir URL.')
+                ->schema([
+                    TextInput::make('url')
+                        ->label('URL')
+                        ->placeholder('https://drive.google.com/…')
+                        ->required()
+                        ->maxLength(1024)
+                        ->url()
+                        ->columnSpan(2),
+                    TextInput::make('judul')
+                        ->label('Judul Tautan')
+                        ->placeholder('Opsional — mis. "SK Bupati 2024"')
+                        ->maxLength(255),
+                ])
+                ->columns(3)
+                ->addActionLabel('Tambah Tautan')
+                ->reorderable()
+                ->collapsible()
+                ->defaultItems(0)
+                ->visibleOn('create'),
 
             TextInput::make('title')
                 ->label('Judul Dokumen')
-                ->helperText('Wajib bila tidak ada berkas (mode unggah berkas). Bila ada berkas, judul boleh kosong (sistem memakai "[DRAF] - Nama File"). Pada mode tautan, judul opsional.')
+                ->helperText('Wajib bila tidak ada berkas maupun tautan. Bila ada isi, judul boleh kosong (sistem memakai "[DRAF] - Nama File / Judul Tautan pertama").')
                 ->maxLength(255)
                 ->visibleOn(['create', 'edit'])
                 ->required(function (string $operation, Get $get): bool {
@@ -127,19 +131,17 @@ class DocumentResource extends Resource
                         return false;
                     }
 
-                    // Mode tautan: judul opsional (judul bisa diambil dari URL),
-                    // aturan "judul wajib bila kosong" TIDAK berlaku.
-                    if ($get('source_mode') === Document::SOURCE_URL) {
-                        return false;
-                    }
-
                     $adaBerkas = collect($get('berkas') ?? [])->filter()->isNotEmpty();
+                    $adaTautan = collect($get('tautan') ?? [])
+                        ->map(fn ($row): string => trim((string) ($row['url'] ?? '')))
+                        ->filter()
+                        ->isNotEmpty();
 
-                    // Mode berkas: hanya wajib bila tidak ada berkas sama sekali.
-                    return ! $adaBerkas;
+                    // Hanya wajib bila berkas DAN tautan sama-sama kosong.
+                    return ! $adaBerkas && ! $adaTautan;
                 })
                 ->validationMessages([
-                    'required' => 'Judul dokumen wajib diisi bila tidak ada berkas.',
+                    'required' => 'Judul dokumen wajib diisi bila tidak ada berkas/tautan.',
                 ]),
 
             Textarea::make('description')
@@ -151,13 +153,13 @@ class DocumentResource extends Resource
                 ->visibleOn(['create', 'edit'])
                 ->helperText('Opsional. Jelaskan ringkasan atau keterangan dokumen.'),
 
-            Section::make('Berkas')
-                ->description('Kelola berkas dokumen — hapus berkas lama atau tambah berkas baru (bisa banyak sekaligus).')
-                ->visible(fn (string $operation, ?Document $record): bool => $operation === 'edit' && $record !== null && ! $record->isUrl())
+            Section::make('Berkas & Tautan')
+                ->description('Kelola berkas dan tautan dokumen — hapus yang lama atau tambah yang baru (bisa banyak sekaligus).')
+                ->visible(fn (string $operation, ?Document $record): bool => $operation === 'edit' && $record !== null)
                 ->schema([
                     ViewField::make('file_list')
                         ->view('filament.arsip.forms.file-list')
-                        ->label('Berkas Tersimpan')
+                        ->label('Tersimpan')
                         ->dehydrated(false),
 
                     FileUpload::make('new_berkas')
@@ -173,6 +175,28 @@ class DocumentResource extends Resource
                         ->panelLayout('compact')
                         ->panelAspectRatio('6:1')
                         ->imagePreviewHeight('70'),
+
+                    Repeater::make('new_tautan')
+                        ->label('Tambah Tautan Baru')
+                        ->helperText('Satu baris per tautan, masing-masing punya judul.')
+                        ->schema([
+                            TextInput::make('url')
+                                ->label('URL')
+                                ->placeholder('https://drive.google.com/…')
+                                ->required()
+                                ->maxLength(1024)
+                                ->url()
+                                ->columnSpan(2),
+                            TextInput::make('judul')
+                                ->label('Judul Tautan')
+                                ->placeholder('Opsional')
+                                ->maxLength(255),
+                        ])
+                        ->columns(3)
+                        ->addActionLabel('Tambah Tautan')
+                        ->reorderable()
+                        ->collapsible()
+                        ->defaultItems(0),
                 ]),
 
             TextInput::make('title')
@@ -269,7 +293,7 @@ class DocumentResource extends Resource
                     ->label('Sumber')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => Document::SOURCES[$state] ?? $state)
-                    ->color(fn (string $state): string => $state === Document::SOURCE_URL ? 'info' : 'gray')
+                    ->color(fn (string $state): string => $state === Document::SOURCE_FILE ? 'gray' : 'info')
                     ->sortable(),
                 TextColumn::make('ownership.name')
                     ->label('Ownership')
@@ -407,75 +431,6 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
-    }
-
-    /**
-     * Daftarkan batch tautan URL (satu baris DB per URL yang valid).
-     * Kegagalan satu URL tidak membatalkan yang lain — diringkas di
-     * notifikasi.
-     *
-     * @param  list<string>  $urls
-     * @param  list<string>  $tagNames
-     * @return array{ids: list<int>, errors: list<string>}
-     */
-    public static function registerUrlBatch(array $urls, ?string $title, ?int $categoryId, array $tagNames, DocumentService $service, ?int $ownershipId = null, ?string $description = null): array
-    {
-        $createdIds = [];
-        $errors = [];
-        $multiple = count($urls) > 1;
-        $user = Auth::user();
-
-        foreach ($urls as $url) {
-            try {
-                $createdIds[] = $service->registerUrl(
-                    (string) $url,
-                    $user,
-                    $categoryId,
-                    ($multiple || blank($title)) ? null : $title,
-                    $tagNames,
-                    $ownershipId,
-                    $description,
-                )->id;
-            } catch (\Throwable $e) {
-                $errors[] = "{$url}: ".self::ringkasError($e);
-                Log::error('[arsip] register URL gagal untuk '.$url.': '.$e->getMessage());
-            }
-        }
-
-        if ($errors !== []) {
-            Notification::make()
-                ->title('Sebagian tautan gagal didaftarkan')
-                ->body(implode("\n", $errors))
-                ->danger()
-                ->persistent()
-                ->send();
-        }
-
-        if ($createdIds !== [] && $errors === []) {
-            Notification::make()
-                ->title(count($createdIds).' tautan berhasil didaftarkan')
-                ->body('Masuk status Menunggu Verifikasi.')
-                ->success()
-                ->send();
-        } elseif ($createdIds !== []) {
-            Notification::make()
-                ->title(count($createdIds).' tautan berhasil, '.count($errors).' gagal')
-                ->warning()
-                ->send();
-        }
-
-        return ['ids' => $createdIds, 'errors' => $errors];
-    }
-
-    /**
-     * Ringkas exception jadi pesan satu-baris yang layak tampil ke user —
-     * error lain dipotong 300 karakter.
-     */
-    private static function ringkasError(\Throwable $e): string
-    {
-        $msg = $e->getMessage();
-
-        return mb_strlen($msg) > 300 ? mb_substr($msg, 0, 297).'...' : $msg;
     }
 
     /**

@@ -144,6 +144,203 @@ class DocumentService
     }
 
     /**
+     * Tambahkan tautan berjudul ke dokumen yang sudah ada (pakai halaman
+     * Edit). Judul kosong → fallback segmen terakhir URL. source_type ikut
+     * disesuaikan: file/tautan/campuran. Undo via hapus baris (removeFile).
+     *
+     * @param  list<array{url: string, judul?: ?string}>  $tautan
+     */
+    public function addLinks(Document $document, array $tautan): int
+    {
+        $bersih = [];
+
+        foreach ($tautan as $row) {
+            $url = trim((string) ($row['url'] ?? ''));
+            $judul = trim((string) ($row['judul'] ?? ''));
+
+            if ($url === '') {
+                continue;
+            }
+
+            if (! filter_var($url, FILTER_VALIDATE_URL)
+                || ! in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+                throw new \RuntimeException("URL tidak valid (harus http/https): {$url}");
+            }
+
+            $bersih[] = ['url' => $url, 'judul' => $judul !== '' ? $judul : null];
+        }
+
+        if ($bersih === []) {
+            return 0;
+        }
+
+        DB::transaction(function () use ($document, $bersih): void {
+            foreach ($bersih as $t) {
+                $document->files()->create([
+                    'storage_path' => null,
+                    'google_file_id' => null,
+                    'google_web_view_link' => $t['url'],
+                    'link_title' => $t['judul'] ?? Document::fallbackTitle(self::filenameFromUrl($t['url'])),
+                    'original_filename' => null,
+                    'file_extension' => null,
+                    'mime_type' => null,
+                    'file_size' => 0,
+                ]);
+            }
+
+            $document->update(['source_type' => $this->tipeCampuran($document->fresh(['files']))]);
+        });
+
+        return count($bersih);
+    }
+
+    /**
+     * Tentukan source_type dari isi files: tanpa isi = file (default lama),
+     * hanya tautan = url, hanya berkas = file, keduanya = campuran "both".
+     */
+    private function tipeCampuran(Document $document): string
+    {
+        $adaBerkas = false;
+        $adaTautan = $document->isUrl() && filled($document->source_url);
+
+        foreach ($document->files as $f) {
+            if ($f->isLink()) {
+                $adaTautan = true;
+            } elseif (filled($f->storage_path)) {
+                $adaBerkas = true;
+            }
+        }
+
+        if ($adaBerkas && $adaTautan) {
+            return Document::SOURCE_BOTH;
+        }
+
+        if ($adaTautan) {
+            return Document::SOURCE_URL;
+        }
+
+        return Document::SOURCE_FILE;
+    }
+
+    /**
+     * Daftarkan SATU dokumen berisi campuran berkas fisik + tautan berjudul
+     * (pakai halaman Create). Judul dokumen kosong → fallback nama file
+     * pertama / judul tautan pertama.
+     *
+     * @param  list<array{path: string, filename: string, mime: string, extension: string, size: int}>  $files
+     * @param  list<array{url: string, judul?: ?string}>  $tautan
+     * @param  list<string>  $tagNames
+     */
+    public function createWithFilesAndLinks(array $files, array $tautan, User $uploader, ?int $categoryId, ?string $title, array $tagNames = [], ?int $ownershipId = null, string $status = Document::STATUS_PENDING, ?string $description = null): Document
+    {
+        $bersihTautan = [];
+
+        foreach ($tautan as $row) {
+            $url = trim((string) ($row['url'] ?? ''));
+            $judul = trim((string) ($row['judul'] ?? ''));
+
+            if ($url === '') {
+                continue;
+            }
+
+            if (! filter_var($url, FILTER_VALIDATE_URL)
+                || ! in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+                throw new \RuntimeException("URL tidak valid (harus http/https): {$url}");
+            }
+
+            $bersihTautan[] = ['url' => $url, 'judul' => $judul !== '' ? $judul : null];
+        }
+
+        if ($files === [] && $bersihTautan === []) {
+            throw new \RuntimeException('Pilih minimal satu berkas atau satu tautan.');
+        }
+
+        $folderId = $this->pendingFolderForYear(now()->year);
+        $uploaded = [];
+
+        try {
+            foreach ($files as $file) {
+                $uploaded[] = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $folderId);
+            }
+        } catch (\Throwable $e) {
+            foreach ($uploaded as $u) {
+                $this->drive->delete($u['id']);
+            }
+
+            Log::error('[arsip] createWithFilesAndLinks dibatalkan, berkas disk dihapus: '.$e->getMessage());
+
+            throw $e;
+        }
+
+        try {
+            return DB::transaction(function () use ($files, $uploaded, $bersihTautan, $uploader, $categoryId, $title, $tagNames, $ownershipId, $status, $description): Document {
+                if (filled($title)) {
+                    $judulDokumen = $title;
+                } elseif ($files !== []) {
+                    $judulDokumen = Document::fallbackTitle($files[0]['filename']);
+                } else {
+                    $t0 = $bersihTautan[0];
+                    $judulDokumen = $t0['judul'] ?? Document::fallbackTitle(self::filenameFromUrl($t0['url']));
+                }
+
+                $tipe = Document::SOURCE_BOTH;
+
+                if ($files === []) {
+                    $tipe = Document::SOURCE_URL;
+                } elseif ($bersihTautan === []) {
+                    $tipe = Document::SOURCE_FILE;
+                }
+
+                $document = Document::create([
+                    'title' => $judulDokumen,
+                    'description' => $description,
+                    'source_type' => $tipe,
+                    'source_url' => $tipe === Document::SOURCE_URL ? $bersihTautan[0]['url'] : null,
+                    'status' => $status,
+                    'category_id' => $categoryId,
+                    'ownership_id' => $ownershipId,
+                    'created_by' => $uploader->id,
+                ]);
+
+                foreach ($files as $i => $file) {
+                    $document->files()->create([
+                        'storage_path' => $uploaded[$i]['id'],
+                        'original_filename' => $file['filename'],
+                        'file_extension' => $file['extension'],
+                        'mime_type' => $file['mime'],
+                        'file_size' => $file['size'],
+                    ]);
+                }
+
+                foreach ($bersihTautan as $t) {
+                    $document->files()->create([
+                        'storage_path' => null,
+                        'google_file_id' => null,
+                        'google_web_view_link' => $t['url'],
+                        'link_title' => $t['judul'] ?? Document::fallbackTitle(self::filenameFromUrl($t['url'])),
+                        'original_filename' => null,
+                        'file_extension' => null,
+                        'mime_type' => null,
+                        'file_size' => 0,
+                    ]);
+                }
+
+                $document->tags()->sync($this->resolveTags($tagNames));
+
+                return $document;
+            });
+        } catch (\Throwable $e) {
+            foreach ($uploaded as $u) {
+                $this->drive->delete($u['id']);
+            }
+
+            Log::error('[arsip] createWithFilesAndLinks gagal catat DB, berkas disk dihapus: '.$e->getMessage());
+
+            throw $e;
+        }
+    }
+
+    /**
      * Daftarkan satu dokumen berbasis tautan (Google Drive / web) — TIDAK ada
      * berkas fisik yang diunggah; baris cuma menyimpan referensi URL. Ikut
      * alur verifikasi sama seperti berkas (status awal pending_review).
@@ -379,17 +576,24 @@ class DocumentService
     }
 
     /**
-     * Hapus SATU berkas (baris document_files) dari sebuah dokumen — dipakai
-     * tombol hapus di daftar berkas halaman Edit. Berkas dihapus dari Drive
-     * (best-effort) lalu baris DB dihapus. Dokumen boleh sampai 0 berkas.
+     * Hapus SATU baris (berkas fisik atau tautan) dari sebuah dokumen —
+     * dipakai tombol hapus di daftar berkas halaman Edit. Berkas fisik
+     * dihapus dari disk (best-effort); baris tautan langsung hapus DB.
+     * source_type dihitung ulang setelah hapus.
      */
     public function removeFile(DocumentFile $file): void
     {
-        if ($file->storage_path) {
+        $document = $file->document;
+
+        if (! $file->isLink() && $file->storage_path) {
             $this->drive->delete($file->storage_path);
         }
 
         $file->delete();
+
+        if ($document) {
+            $document->update(['source_type' => $this->tipeCampuran($document->fresh(['files']))]);
+        }
     }
 
     /**
@@ -407,15 +611,6 @@ class DocumentService
             $uploaded = $this->drive->uploadTo($file['path'], $file['filename'], $file['mime'], $targetFolderId);
 
             try {
-                if ($document->isUrl()) {
-                    // Dokumen yang tadinya cuma tautan berubah jadi dokumen
-                    // berkas begitu berkas fisik pertama ditambahkan.
-                    $document->update([
-                        'source_type' => Document::SOURCE_FILE,
-                        'source_url' => null,
-                    ]);
-                }
-
                 $document->files()->create([
                     'storage_path' => $uploaded['id'],
                     'original_filename' => $file['filename'],
@@ -423,6 +618,8 @@ class DocumentService
                     'mime_type' => $file['mime'],
                     'file_size' => $file['size'],
                 ]);
+
+                $document->update(['source_type' => $this->tipeCampuran($document->fresh(['files']))]);
             } catch (\Throwable $e) {
                 $this->drive->delete($uploaded['id']);
                 Log::error('[arsip] addFiles gagal mencatat metadata, berkas disk dihapus: '.$e->getMessage());

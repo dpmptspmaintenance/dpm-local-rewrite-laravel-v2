@@ -31,11 +31,13 @@ class EditDocument extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        // Tag & berkas baru disimpan lewat afterSave() (butuh sync pivot /
-        // panggilan DocumentService), bukan kolom langsung pada model documents.
+        // Tag, berkas & tautan baru disimpan lewat afterSave() (butuh sync
+        // pivot / panggilan DocumentService), bukan kolom langsung pada
+        // model documents.
         unset(
             $data['tag_names'],
             $data['new_berkas'],
+            $data['new_tautan'],
         );
 
         return $data;
@@ -72,7 +74,7 @@ class EditDocument extends EditRecord
             $service->organizeOnPublish($record);
         }
 
-        // Berkas baru yang dipilih lewat repeater "Tambah Berkas" — diunggah
+        // Berkas baru yang dipilih lewat "Tambah Berkas" — diunggah
         // sekarang (bukan sebelum record tersimpan, supaya kalau upload
         // gagal, sisa perubahan form tetap tersimpan).
         $newBerkas = $this->data['new_berkas'] ?? [];
@@ -99,6 +101,31 @@ class EditDocument extends EditRecord
             // Reset field upload supaya tidak ke-submit ulang bila user
             // menyimpan form lagi tanpa refresh halaman.
             $this->data['new_berkas'] = [];
+        }
+
+        // Tautan baru lewat "Tambah Tautan".
+        $newTautan = $this->data['new_tautan'] ?? [];
+
+        if (is_array($newTautan) && $newTautan !== []) {
+            try {
+                $jumlah = $service->addLinks($record, $newTautan);
+
+                if ($jumlah > 0) {
+                    Notification::make()
+                        ->title($jumlah.' tautan berhasil ditambahkan')
+                        ->success()
+                        ->send();
+                }
+            } catch (\Throwable $e) {
+                Notification::make()
+                    ->title('Tautan baru gagal ditambahkan')
+                    ->body($e->getMessage())
+                    ->danger()
+                    ->persistent()
+                    ->send();
+            }
+
+            $this->data['new_tautan'] = [];
         }
     }
 

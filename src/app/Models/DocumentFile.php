@@ -20,6 +20,7 @@ class DocumentFile extends Model
         'storage_path',
         'google_file_id',
         'google_web_view_link',
+        'link_title',
         'original_filename',
         'file_extension',
         'mime_type',
@@ -33,6 +34,12 @@ class DocumentFile extends Model
         ];
     }
 
+    /** Baris ini tautan (bukan berkas fisik). */
+    public function isLink(): bool
+    {
+        return filled($this->google_web_view_link) && blank($this->storage_path);
+    }
+
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
@@ -40,9 +47,14 @@ class DocumentFile extends Model
 
     /**
      * URL pratinjau/unduh dari route aplikasi (bukan lagi Google Drive).
+     * Baris tautan langsung mengembalikan URL aslinya.
      */
     public function previewUrl(): string
     {
+        if ($this->isLink()) {
+            return (string) $this->google_web_view_link;
+        }
+
         return route('arsip.berkas.document-file', ['documentFile' => $this->getKey()]);
     }
 

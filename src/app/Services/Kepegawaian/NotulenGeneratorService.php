@@ -255,13 +255,17 @@ class NotulenGeneratorService
     }
 
     /**
+     * @param  string|null  $docxPath  Render PDF dari dokumen ini bila diberikan
+     *                                 (mis. snapshot hasil koreksi editor Word);
+     *                                 null = generate baru dari data notulen.
      * @return string Path file .pdf sementara hasil convert.
      */
-    public function generatePdf(Notulen $notulen): string
+    public function generatePdf(Notulen $notulen, ?string $docxPath = null): string
     {
         $this->configureTempDir();
 
-        $docxPath = $this->generateDocx($notulen);
+        $sementara = $docxPath === null;
+        $docxPath ??= $this->generateDocx($notulen);
 
         try {
             return $this->convertToPdfViaLibreOffice($docxPath);
@@ -270,7 +274,9 @@ class NotulenGeneratorService
 
             return $this->convertToPdfViaDompdf($docxPath);
         } finally {
-            @unlink($docxPath);
+            if ($sementara) {
+                @unlink($docxPath);
+            }
         }
     }
 

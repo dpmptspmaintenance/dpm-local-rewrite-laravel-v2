@@ -75,6 +75,15 @@
         }
     };
 
+    const previewFrame = document.getElementById('stw-preview');
+
+    const refreshPreview = () => {
+        if (!previewFrame) return;
+
+        const separator = config.pdfUrl.includes('?') ? '&' : '?';
+        previewFrame.src = config.pdfUrl + separator + 't=' + Date.now();
+    };
+
     const readAsBlob = async (url) => {
         const response = await fetch(url, {
             credentials: 'same-origin',
@@ -168,9 +177,51 @@
                     }
 
                     setStatus('Tersimpan', 'ok');
+                    refreshPreview();
                     window.__stwShowToast?.('Dokumen tersimpan.');
                 } catch (error) {
                     fail('Gagal menyimpan: ' + error.message);
+                } finally {
+                    button.disabled = false;
+                }
+            });
+
+            document.querySelector('[data-stw-action="print"]')?.addEventListener('click', async (event) => {
+                const button = event.currentTarget;
+                button.disabled = true;
+                setStatus('Menyiapkan cetak…');
+
+                try {
+                    const exported = await superdoc.export({ triggerDownload: false });
+                    const bytes = exported instanceof Blob ? exported : new Blob([exported]);
+
+                    const form = new FormData();
+                    form.append('file', bytes, config.fileName + '.docx');
+
+                    // PDF dari isi kanvas (termasuk edit belum disimpan),
+                    // dirender LibreOffice supaya sama dengan hasil unduhan.
+                    const response = await fetch(config.printUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'X-CSRF-TOKEN': csrfToken(), Accept: 'application/pdf' },
+                        body: form,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Gagal menyiapkan cetak (' + response.status + ').');
+                    }
+
+                    const url = URL.createObjectURL(await response.blob());
+                    const win = window.open(url, '_blank');
+
+                    if (!win) {
+                        throw new Error('Popup diblokir browser. Izinkan popup lalu coba lagi.');
+                    }
+
+                    setStatus('PDF cetak dibuka, tekan Ctrl+P', 'ok');
+                    setTimeout(() => URL.revokeObjectURL(url), 120000);
+                } catch (error) {
+                    fail('Gagal mencetak: ' + error.message);
                 } finally {
                     button.disabled = false;
                 }
@@ -199,12 +250,14 @@
                         throw new Error('Gagal generate ulang (' + response.status + ').');
                     }
 
-                    const fresh = await readAsBlob(config.docxUrl);
-                    await superdoc.replaceFile(new File([fresh], config.fileName + '.docx', {
-                        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    }));
+                    // replaceFile() tidak menerapkan ulang ukuran halaman
+                    // (pgSz) pada kanvas, sehingga dokumen hasil generate bisa
+                    // tampil A4 walau berkas barunya folio. Muat ulang halaman
+                    // supaya kanvas membaca berkas baru dari awal.
+                    setStatus('Dokumen digenerate ulang, memuat ulang…', 'ok');
+                    window.location.reload();
 
-                    setStatus('Dokumen digenerate ulang', 'ok');
+                    return;
                 } catch (error) {
                     fail('Gagal generate ulang: ' + error.message);
                 }
@@ -222,7 +275,43 @@
         setTimeout(() => toast.remove(), 2500);
     };
 
-    if (document.readyState === 'loading') {
+    const tabs = Array.from(document.querySelectorAll('[data-stw-tab]'));
+    const panels = {
+        preview: document.querySelector('[data-stw-panel="preview"]'),
+        edit: document.querySelector('[data-stw-panel="edit"]'),
+    };
+    const editOnly = Array.from(document.querySelectorAll('[data-stw-edit-only]'));
+
+    let editorStarted = false;
+
+    const showTab = (name) => {
+        tabs.forEach((tab) => tab.classList.toggle('is-active', tab.dataset.stwTab === name));
+
+        Object.entries(panels).forEach(([key, panel]) => {
+            if (panel) {
+                panel.hidden = key !== name;
+            }
+        });
+
+        editOnly.forEach((element) => {
+            element.style.display = name === 'edit' ? '' : 'none';
+        });
+
+        // Kanvas SuperDoc baru dibuat saat tab Edit dipilih (butuh container
+        // yang terlihat agar ukurannya benar).
+        if (name === 'edit' && !editorStarted) {
+            editorStarted = true;
+            boot();
+        }
+    };
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => showTab(tab.dataset.stwTab));
+    });
+
+    if (tabs.length > 0) {
+        showTab('preview');
+    } else if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot, { once: true });
     } else {
         boot();

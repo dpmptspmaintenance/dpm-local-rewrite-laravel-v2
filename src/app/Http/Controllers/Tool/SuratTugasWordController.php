@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tool;
 use App\Http\Controllers\Controller;
 use App\Models\Kepegawaian\SuratTugas;
 use App\Services\Kepegawaian\SuratTugasDocumentService;
+use App\Services\Kepegawaian\SuratTugasGeneratorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -98,6 +99,41 @@ class SuratTugasWordController extends Controller
         ]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Cetak dari isi kanvas: terima .docx ekspor editor (termasuk perubahan
+     * belum disimpan), render PDF, kembalikan inline untuk dibuka di tab baru.
+     * Hasil memakai mesin LibreOffice — sama dengan berkas unduhan.
+     */
+    public function print(Request $request, SuratTugas $suratTugas): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        abort_unless($request->user() !== null, 403);
+
+        $maxKb = (int) config('arsip.max_upload_kb', 51200);
+
+        $request->validate([
+            'file' => ['required', 'file', 'max:'.$maxKb, 'mimetypes:application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'],
+        ]);
+
+        $uploaded = $request->file('file');
+        $tmp = sys_get_temp_dir().'/'.uniqid('stwprint_', true).'.docx';
+        copy((string) $uploaded->getRealPath(), $tmp);
+
+        try {
+            $pdf = app(SuratTugasGeneratorService::class)->generatePdf($suratTugas, $tmp);
+        } finally {
+            @unlink($tmp);
+        }
+
+        $filename = $this->documents->downloadName($suratTugas, 'pdf');
+
+        return response()
+            ->file($pdf, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.addslashes($filename).'"',
+            ])
+            ->deleteFileAfterSend(true);
     }
 
     /**

@@ -32,7 +32,10 @@ class Document extends Model
     public const SOURCES = [
         self::SOURCE_FILE => 'Berkas',
         self::SOURCE_URL => 'Tautan',
+        'both' => 'Berkas + Tautan',
     ];
+
+    public const SOURCE_BOTH = 'both';
 
     /** @var array<string, string> */
     public const STATUSES = [
@@ -153,6 +156,16 @@ class Document extends Model
     public function isUrl(): bool
     {
         return $this->source_type === self::SOURCE_URL;
+    }
+
+    /** Ada baris tautan di files (atau dokumen url lama via source_url). */
+    public function hasLinks(): bool
+    {
+        if (filled($this->source_url)) {
+            return true;
+        }
+
+        return $this->files->contains(fn (DocumentFile $f): bool => $f->isLink());
     }
 
     /**
