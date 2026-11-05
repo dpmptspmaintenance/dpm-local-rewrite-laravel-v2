@@ -48,7 +48,7 @@ class ApiKeys extends Page implements HasTable
 
     public function getSubheading(): string|\Illuminate\Contracts\Support\Htmlable|null
     {
-        return 'Kunci akses API untuk Chrome extension. Kunci memiliki scope generator-cuti saja.';
+        return 'Kunci akses API untuk Chrome extension. Pilih scope sesuai kebutuhan: generator-cuti, rekap-absen, dan/atau data-dukung-tpp.';
     }
 
     public function table(Table $table): Table
@@ -86,7 +86,7 @@ class ApiKeys extends Page implements HasTable
                         CheckboxList::make('scopes')
                             ->label('Scope')
                             ->options(ApiKey::SCOPES)
-                            ->default([ApiKey::SCOPE_GENERATOR_CUTI])
+                            ->default([ApiKey::SCOPE_GENERATOR_CUTI, ApiKey::SCOPE_REKAP_ABSEN, ApiKey::SCOPE_DATA_DUKUNG_TPP])
                             ->required()
                             ->minItems(1),
                         DatePicker::make('expires_at')

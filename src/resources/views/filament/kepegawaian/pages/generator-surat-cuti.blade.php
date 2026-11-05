@@ -173,9 +173,16 @@
                 <div class="sc-detail">
                     <div class="sc-detail-head">
                         <strong>Rincian batch {{ $riwayatDetailBatch }}</strong>
-                        <button type="button" class="sc-view" wire:click="tutupRiwayat" title="Tutup rincian">
-                            <x-filament::icon icon="heroicon-o-x-mark" class="sc-del-icon" />
-                        </button>
+                        <div class="sc-detail-actions">
+                            @if (count($riwayatDetail) > 0)
+                                <x-filament::button type="button" size="xs" color="gray" icon="heroicon-o-clipboard-document" wire:click="salinRiwayatDetail">
+                                    Salin Semua ({{ count(array_filter($riwayatDetail, fn ($d) => empty($d['duplikat']))) }})
+                                </x-filament::button>
+                            @endif
+                            <button type="button" class="sc-view" wire:click="tutupRiwayat" title="Tutup rincian">
+                                <x-filament::icon icon="heroicon-o-x-mark" class="sc-del-icon" />
+                            </button>
+                        </div>
                     </div>
                     @if (count($riwayatDetail) === 0)
                         <p class="sc-hint">Batch tidak ditemukan (mungkin baru saja dihapus).</p>
@@ -199,13 +206,20 @@
                                             <td>{{ $d['jenis'] }}</td>
                                             <td class="sc-num">{{ $d['hari'] }}</td>
                                             <td class="sc-wrap">{{ $d['pengajuan'] }}</td>
-                                            <td class="sc-mono">@if ($d['duplikat'])<span class="sc-badge-dupe">Duplikat</span>@else{{ $d['nomor'] }}@endif</td>
+                                            <td class="sc-mono">
+                                                @if ($d['duplikat'])
+                                                    <span class="sc-badge-dupe">Duplikat</span>
+                                                @else
+                                                    <button type="button" class="sc-nomor" wire:click="salinRiwayatBaris({{ $loop->index }})" title="Klik untuk salin baris">{{ $d['nomor'] }}</button>
+                                                @endif
+                                            </td>
                                             <td class="sc-num sc-mono-sm">@if (is_array($d['sisa'])){{ collect($d['sisa'])->map(fn ($v, $k) => $k.': '.$v)->implode(' · ') }}@else —@endif</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
                             </table>
                         </div>
+                        <p class="sc-hint">Klik nomor surat untuk menyalin satu baris, atau Salin Semua untuk seluruh batch (No, Kode, Tanggal, Keterangan) siap tempel ke Excel.</p>
                     @endif
                 </div>
             @endif
@@ -298,6 +312,7 @@
             padding: .5rem .75rem; background: #f3f4f6; font-size: .875rem;
         }
         .dark .sc-detail-head { background: #1f2937; }
+        .sc-detail-actions { display: flex; align-items: center; gap: .5rem; }
         .sc-badge-src {
             display: inline-block; padding: .1rem .5rem; border-radius: 9999px;
             background: #e0e7ff; color: #3730a3; font-size: .7rem; font-weight: 600;

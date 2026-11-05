@@ -153,6 +153,7 @@ Editor dokumen ada di panel Tool: `/tool/notulen/{id}/word` dan `/tool/surat-tug
 - **Generate Ulang** me-reload halaman (bukan `superdoc.replaceFile()`) karena `replaceFile()` tidak menerapkan ulang `pgSz`; tanpa reload kanvas bisa tetap A4 walau berkas baru folio. Simpan (save) me-refresh iframe pratinjau.
 - **Cetak** = ekspor kanvas (edit belum disimpan ikut) → `POST /tool/{notulen,surat-tugas}-word/{id}/print` → PDF LibreOffice dibuka di tab baru (tekan `Ctrl+P`).
 - Berkas: `NotulenWordController` / `SuratTugasWordController` (`show`, `store`, `print`, `regenerate`, `debug`), boot JS `public/vendor/superdoc/nw-boot.js` / `stw-boot.js` (global `__nwBooted` vs `__stwBooted`), snapshot service `NotulenDocumentService` / `SuratTugasDocumentService` (`materialize`, `regenerate`, `replaceSnapshot`, `renderPdf`).
+- **Lampiran gambar**: form `FileUpload('gambar')` multiple (disk `arsip`, folder `kepegawaian/notulen/gambar`, PNG/JPEG). `NotulenGeneratorService::injectGambarLampiran()` mengganti marker `${gambar_block}` (setelah tabel TTD) dengan heading **Dokumentasi** + tabel 2 kolom (satu gambar per sel, `cantSplit`), plus rels/media/content-types. Tanpa gambar, paragraf marker dihapus. Daftar gambar berubah → `EditNotulen::afterSave()` regenerate snapshot otomatis.
 - Snapshot notulen butuh kolom `document_*` (migrasi `2026_11_03_000002_add_document_snapshot_to_notulen_table`, guarded `hasColumn`; APP_ENV=production → berikan SQL ke user).
 - Template `notulen.docx` = folio (`<w:pgSz w:w="12189" w:h="18709"/>`), sama dengan `surat-tugas.docx`.
 - Berkas snapshot di disk `arsip` harus dimiliki `www-data`; bila pernah diedit sebagai root, `chown -R www-data:www-data storage/arsip` agar simpan/regenerate tidak 500 (`UnableToWriteFile`).
@@ -238,7 +239,7 @@ Hasil API **harus identik** dengan halaman Generator Surat Cuti UI. Satu-satunya
 - Tanpa Sanctum (sengaja, tanpa dependensi baru). Autentikasi via middleware `api.key` (`app/Http/Middleware/AuthenticateApiKey.php`): header `X-API-Key` (atau `Authorization: Bearer`), hash SHA-256 dicocokkan ke `kepegawaian.api_keys.key_hash`.
 - Model `App\Models\ApiKey` (koneksi `kepegawaian`): `terbitkan()` mengembalikan `[model, plaintext]` — plaintext hanya ada sekali, jangan log/disimpan ulang.
 - Kunci dibuat/dicabut di panel Kepegawaian → Master → **API Key** (`ApiKeys.php` + `api-keys.blade.php`; blade juga memuat dokumentasi endpoint untuk pembuat extension).
-- Scope tunggal: `generator-cuti`. Rate limit `throttle:60,1`.
+- Scope: `generator-cuti` dan `rekap-absen` (masing-masing punya route group sendiri di `routes/api.php`). Rate limit `throttle:60,1` per kunci.
 - CORS: `config/cors.php` mengizinkan `chrome-extension://*` (`allowed_origins_patterns`); tanpa cookie/credentials.
 
 ### 2. Endpoint (prefix `/api/v1`, lihat `routes/api.php`)
@@ -261,4 +262,41 @@ Hasil API **harus identik** dengan halaman Generator Surat Cuti UI. Satu-satunya
 - Kredensial & spreadsheet **terpisah** dari RapatKita: `config/generatorcuti.php` (`GENERATORCUTI_SHEETS_ENABLED/CREDENTIALS_PATH/ID/TAB`, default tab `Riwayat`). Service: `src/app/Services/Kepegawaian/GeneratorCutiSheetsMirror.php`; kolom sheet = Batch, Waktu, Sumber, Sumber Label, Nama, NIP (lookup `pegawai_profils`), Jenis, Hari, Rentang, Pengajuan, Nomor Surat, Duplikat (YA/kosong), Dibuat Oleh, Sisa.
 - Gagal sync = API balas **500** (`Gagal menulis ke Google Sheets: ...`, tetap sertakan `batch`); riwayat DB tetap tersimpan. `syncAll()` juga melempar bila mirror belum dikonfigurasi — jadi API 500 sampai env diisi.
 - Setup: `php artisan generatorcuti:init-sheets` (`InitGeneratorCutiSheets.php`) — buat tab, sync awal, verifikasi share ke service account. Blade `api-keys` mendokumentasikan perilaku ini.
+
+---
+
+## 10. Modul Kepegawaian — Rekap Absen Bulanan & Data Dukung TPP
+
+Rekap absensi bulanan per pegawai (satu baris = `nip + tahun + bulan`). Panel Kepegawaian **baca saja**; data masuk hanya lewat API dari Chrome extension presensi. Dokumentasi endpoint ada di halaman **Master → Dokumentasi API** (`ApiDocs`, `/kepegawaian/api-docs`).
+
+### 1. Tabel & Model (koneksi `kepegawaian`)
+- `rekap_absen` → `RekapAbsen` (header + ringkasan). Unik `nip+tahun+bulan`.
+- `rekap_absen_harian` → `RekapAbsenHarian` (rincian; `hadir_selisih`/`pulang_selisih` = kolom "+/-").
+- `rekap_absen_data_dukung` → `RekapAbsenDataDukung` (lampiran absen; hanya `token`, tautan dibentuk `FILE_BASE.token` = `https://secure-sadewa.semarangkota.go.id/get-file/data-dukung/`).
+- `rekap_absen_tpp` + `rekap_absen_tpp_tanggal` → `RekapAbsenTpp` / `RekapAbsenTppTanggal` (data dukung TPP, satu baris tanggal per hari tercakup).
+- Migrasi: `2026_11_04_000001_create_rekap_absen_tables.php`, `2026_11_04_000002_create_rekap_absen_tpp_tables.php` (guarded `hasTable`; APP_ENV=production → berikan SQL ke user).
+
+### 2. API (`scope rekap-absen`, prefix `/api/v1`)
+- `POST rekap-absen` — upsert; `<nip,tahun,bulan>` sama **mengganti** semua `harian` + `data_dukung` (transaksi, `RekapAbsenService::simpan()`). Respons `aksi: dibuat|diperbarui`. Batch `{"items":[...]}` maks 12.
+- `GET rekap-absen?nip=&tahun=&bulan=` (maks 200) dan `GET rekap-absen/{id}` (termasuk `harian[]` + `data_dukung[].tautan`).
+- Aturan normalisasi ada di `RekapAbsenService`: tanggal terima `Y-m-d`/`d-m-Y`/`d/m/Y`; `jam_*` wajib tanggal+jam; `status "-"` → null; `bulan` boleh angka atau nama bulan; `nama/jabatan/opd` kosong → fallback `pegawai_profil`.
+- **Tidak ada endpoint hapus rekap.** Panel tidak punya create/edit/delete header.
+
+### 3. Panel
+- `RekapAbsenResource` (`/kepegawaian/rekap-absen`): hanya index + view. Filter Tahun/Bulan default **bulan lalu (h-1)**, layout `FiltersLayout::AboveContent`, klik baris → halaman show.
+- Kolom **Keterlambatan** sortable lewat `coalesce(time_to_sec(total_keterlambatan), 0)` (teks `HH:MM:SS`, null = 0).
+- Kolom **Belum Konfirmasi** = `counts('harianKonfirmasiTanpaDukung')` (badge merah bila >0).
+- Satu-satunya aksi tulis: hapus baris harian lewat `HarianRelationManager` (butuh `->authorize(true)` karena tanpa policy). Setelah hapus `RekapAbsenService::hitungUlangRingkasan()` menghitung ulang hadir/konfirmasi/tidak hadir; event `rekap-harian-dihapus` me-refresh ringkasan di halaman show.
+- `DeteksiDataDukung` (`/kepegawaian/deteksi-data-dukung`): baris harian ber-`status` yang tanggalnya tidak tercakup data dukung absen **maupun** TPP. Filter Data Dukung default "Belum ada", periode default h-1, layout AboveContent.
+
+### 4. Data Dukung TPP (API, tanpa impor PDF)
+- Sumber: `tpp.semarangkota.go.id/izin` → tabel "Data Pegawai Tidak Masuk Kerja". Chrome extension scrape tabel lalu `POST /api/v1/data-dukung-tpp` (scope `data-dukung-tpp`, maks 200 baris/request). **Tidak ada impor PDF, tidak ada berkas yang disimpan di server.**
+- `TppDataDukungService::simpan()` normalisasi: `bulan` angka/nama, `tanggal_list` eksplisit atau diparse dari `keterangan` (`(tgl 9 dan 12 oktober 2026)`, `(tgl 28-30 oktober 2026)`), `jenis` diturunkan dari keterangan, `jumlah_hari` fallback jumlah tanggal.
+- **Upsert**: kunci `id_tpp` (id baris TPP); bila kosong pakai `nip+tahun+bulan+keterangan+tanggal_mulai+jumlah_hari`. Baris tanggal anak diganti tiap upsert. Tidak ada endpoint hapus.
+- **Validitas**: `file_pendukung_status` = `ada` | `belum` (inferensi: url/nama terisi → `ada`). Hanya `ada` yang menutup konfirmasi. Baris `belum` tetap disimpan sebagai catatan.
+- `GET /api/v1/data-dukung-tpp?nip=&tahun=&bulan=&valid=` (maks 500) mengembalikan `tanggal[]`, `file_pendukung_*`, `valid`.
+- **Coverage**: tanggal dianggap konfirmasi bila tercakup rentang `rekap_absen_data_dukung` ATAU ada di `rekap_absen_tpp_tanggal` milik baris TPP **berstatus `ada`** (nip+tahun+bulan sama). Dipakai di kolom Belum Konfirmasi, halaman Deteksi, dan fallback kolom **Lampiran** di tabel harian (`RekapAbsenHarian::tautanLampiran()` → `file_pendukung_url`).
+- Detail rekap menampilkan **kartu terpisah** "Data Dukung TPP" (status file + tautan berkas TPP).
+- **Jebakan SQL**: subquery coverage TPP di `harianKonfirmasiTanpaDukung()` harus meng-join `rekap_absen` sendiri (`r.id = rekap_absen_harian.rekap_absen_id`); jangan korelasi ke `rekap_absen.nip` — gagal saat relasi dipanggil langsung (`harianKonfirmasiTanpaDukung()->count()`), hanya jalan di konteks `withCount`.
+- Migrasi: `2026_11_04_000002_create_rekap_absen_tpp_tables.php` (fresh) dan `2026_11_04_000003_add_api_fields_to_rekap_absen_tpp.php` (guard `hasColumn`, tambah kolom API + buang `file_path`/`file_name`). APP_ENV=production → berikan SQL ke user, jangan `migrate`.
 

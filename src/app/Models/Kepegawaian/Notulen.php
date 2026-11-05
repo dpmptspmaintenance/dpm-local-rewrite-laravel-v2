@@ -18,6 +18,10 @@ class Notulen extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'gambar' => 'array',
+    ];
+
     public function atasan(): BelongsTo
     {
         return $this->belongsTo(User::class, 'atasan_user_id');

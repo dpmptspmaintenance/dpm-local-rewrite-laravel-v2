@@ -20,11 +20,17 @@ class ApiKey extends Model
 
     public const SCOPE_GENERATOR_CUTI = 'generator-cuti';
 
+    public const SCOPE_REKAP_ABSEN = 'rekap-absen';
+
+    public const SCOPE_DATA_DUKUNG_TPP = 'data-dukung-tpp';
+
     public const PREFIX = 'dpmk_';
 
     /** @var array<string, string> */
     public const SCOPES = [
         self::SCOPE_GENERATOR_CUTI => 'Generator Surat Cuti (baca pegawai, hitung sisa, simpan nomor)',
+        self::SCOPE_REKAP_ABSEN => 'Rekap Absen Bulanan (unggah/upsert presensi bulanan per pegawai)',
+        self::SCOPE_DATA_DUKUNG_TPP => 'Data Dukung TPP (unggah/upsert data pegawai tidak masuk kerja dari TPP)',
     ];
 
     protected $guarded = ['id'];

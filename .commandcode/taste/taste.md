@@ -1,1 +1,7 @@
 - Prefers inline Yes/No icon confirmation for delete actions instead of alert dialogs. Confidence: 0.85
+- When specifying an output format (e.g. clipboard/export text), supplies a literal sample line (e.g. `1. NIP # jumlah # Tanggal 30`) and expects it reproduced character-for-character — exact ordering and separators (`#`), Indonesian long-form dates — not an approximation. Confidence: 0.7
+- Wants dates in exports/copied text shown in long-form Indonesian (`22 Oktober 2026`), not numeric `22-10-2026`, and corrects the assistant when numeric dates slip through. Confidence: 0.75
+- In copied/exported text, names must be properly capitalized (title case per word) even when the stored data is uppercase, without breaking titles/degrees (e.g. `S.Kom`, `A.Md.`, `S.STP.`). Confidence: 0.6
+- Wants API/integration documentation on a dedicated page rather than only a note block inside another page — spelling out CRUD per endpoint with full JSON request/response examples and field/schema details. Confidence: 0.6
+- For Filament table pages, wants a consistent convention: filters rendered above the table content (`FiltersLayout::AboveContent`), period filters (year/month) defaulting to the previous month (h-1) rather than the current one, and pagination defaulting to 50 rows per page. Confidence: 0.75
+- Checks previews/render surfaces himself and expects them to match the real generated file (e.g. document page size in the editor canvas/preview must equal the exported PDF/Word) — verify every render path, not just the underlying file. Confidence: 0.8

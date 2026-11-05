@@ -3,13 +3,18 @@
 namespace App\Filament\Tool\Resources\NotulenResource\Pages;
 
 use App\Filament\Tool\Resources\NotulenResource;
+use App\Services\Kepegawaian\NotulenDocumentService;
 use Filament\Actions\DeleteAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Carbon;
 
 class EditNotulen extends EditRecord
 {
     protected static string $resource = NotulenResource::class;
+
+    /** @var list<string> */
+    private array $gambarLama = [];
 
     protected function getHeaderActions(): array
     {
@@ -56,5 +61,42 @@ class EditNotulen extends EditRecord
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');
+    }
+
+    protected function beforeSave(): void
+    {
+        $this->gambarLama = array_values((array) ($this->record->gambar ?? []));
+    }
+
+    /**
+     * Lampiran gambar hanya terlihat di dokumen setelah snapshot diregenerasi.
+     * Regenerate otomatis HANYA saat daftar gambar berubah, supaya koreksi
+     * manual di editor Word tidak hilang saat menyimpan perubahan lain.
+     */
+    protected function afterSave(): void
+    {
+        $baru = array_values((array) ($this->record->gambar ?? []));
+
+        if ($baru === $this->gambarLama) {
+            return;
+        }
+
+        try {
+            app(NotulenDocumentService::class)->regenerate($this->record, auth()->id());
+
+            Notification::make()
+                ->title('Dokumen diperbarui')
+                ->body('Lampiran gambar sudah masuk ke dokumen word/PDF.')
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            report($e);
+
+            Notification::make()
+                ->title('Gagal memperbarui dokumen')
+                ->body($e->getMessage())
+                ->warning()
+                ->send();
+        }
     }
 }

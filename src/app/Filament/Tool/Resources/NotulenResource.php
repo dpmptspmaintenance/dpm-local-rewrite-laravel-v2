@@ -13,6 +13,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -151,6 +152,25 @@ class NotulenResource extends Resource
                         ->required()
                         ->columnSpanFull(),
                 ]),
+
+            Section::make('Lampiran Gambar')
+                ->description('Opsional. Gambar disusun dalam tabel 2 kolom (satu gambar per sel) sebelum blok tanda tangan.')
+                ->schema([
+                    FileUpload::make('gambar')
+                        ->label('Gambar Lampiran')
+                        ->multiple()
+                        ->image()
+                        ->reorderable()
+                        ->appendFiles()
+                        ->disk('arsip')
+                        ->directory('kepegawaian/notulen/gambar')
+                        ->visibility('private')
+                        ->acceptedFileTypes(['image/png', 'image/jpeg'])
+                        ->maxSize(10240)
+                        ->helperText('Simpan form, lalu klik "Generate Ulang" di editor Word agar gambar masuk ke dokumen.')
+                        ->columnSpanFull(),
+                ])
+                ->collapsible(),
 
             Section::make('Penutup & Tanggal Naskah')
                 ->columns(2)

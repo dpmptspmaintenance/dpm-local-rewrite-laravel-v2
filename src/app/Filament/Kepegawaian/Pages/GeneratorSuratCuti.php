@@ -3,6 +3,7 @@
 namespace App\Filament\Kepegawaian\Pages;
 
 use App\Models\Kepegawaian\Cuti;
+use App\Models\Kepegawaian\PegawaiProfil;
 use App\Models\Kepegawaian\SuratCutiRiwayat;
 use App\Services\Kepegawaian\SuratCutiGeneratorService;
 use Carbon\Carbon;
@@ -113,7 +114,7 @@ class GeneratorSuratCuti extends Page
     /**
      * Rincian baris satu batch riwayat.
      *
-     * @var list<array{nama: string, jenis: string, hari: int, pengajuan: string, nomor: string, duplikat: bool, sisa: array}>
+     * @var list<array{nama: string, jenis: string, hari: int, pengajuan: string, tanggal: string, rentang: string, nomor: string, duplikat: bool, sisa: array}>
      */
     public array $riwayatDetail = [];
 
@@ -248,6 +249,10 @@ class GeneratorSuratCuti extends Page
                 'jenis' => (string) ($r->jenis ?: '—'),
                 'hari' => (int) $r->hari,
                 'pengajuan' => (string) ($r->pengajuan ?: '—'),
+                'tanggal' => $r->created_at
+                    ? Carbon::parse($r->created_at)->locale('id')->translatedFormat('d F Y')
+                    : '—',
+                'rentang' => (string) ($r->rentang ?: ''),
                 'nomor' => (string) $r->nomor_surat,
                 'duplikat' => (bool) $r->is_duplikat,
                 'sisa' => $r->sisa ?? [],
@@ -480,14 +485,7 @@ class GeneratorSuratCuti extends Page
             return;
         }
 
-        $this->js(
-            '(async function (teks) { try { await navigator.clipboard.writeText(teks); } catch (e) {'
-            .' var ta = document.createElement("textarea"); ta.value = teks;'
-            .' ta.style.position = "fixed"; ta.style.opacity = "0";'
-            .' document.body.appendChild(ta); ta.select();'
-            .' try { document.execCommand("copy"); } catch (err) {} ta.remove(); } })'
-            .'('.Js::from($this->hasilTsv()).');',
-        );
+        $this->salinKeClipboard($this->hasilTsv());
 
         Notification::make()
             ->title($this->jumlahTersalin().' baris disalin ke clipboard (tanpa duplikat)')
@@ -571,6 +569,125 @@ class GeneratorSuratCuti extends Page
         $sisa = $h['sisa'][$tahunBerjalan] ?? '—';
         $teks = $h['nomor']."\tSisa {$tahunBerjalan}: {$sisa}";
 
+        $this->salinKeClipboard($teks);
+
+        Notification::make()
+            ->title('Disalin: nomor + sisa '.$tahunBerjalan)
+            ->success()
+            ->send();
+    }
+
+    /**
+     * Salin seluruh rincian batch riwayat yang sedang dibuka, satu baris
+     * tab-separasi per rincian: "seq kode tanggal keterangan" dengan tanggal =
+     * created_at baris riwayat (saat dibuat / POST API), mis.
+     * "1248 800 30 Oktober 2026 Cuti Sakit Misbah 1 hari (26 Oktober 2026)".
+     * Baris duplikat tidak punya nomor surat — tidak disalin.
+     */
+    public function salinRiwayatDetail(): void
+    {
+        $baris = [];
+
+        foreach ($this->riwayatDetail as $d) {
+            if (! is_array($d) || ! empty($d['duplikat'])) {
+                continue;
+            }
+
+            $baris[] = $this->barisRiwayat($d);
+        }
+
+        if ($baris === []) {
+            return;
+        }
+
+        $this->salinKeClipboard(implode("\n", $baris));
+
+        Notification::make()
+            ->title(count($baris).' baris riwayat disalin ke clipboard')
+            ->body('Tempel (Ctrl+V) langsung di Excel atau Spreadsheet.')
+            ->success()
+            ->send();
+    }
+
+    /** Salin satu baris rincian riwayat (klik nomor surat). */
+    public function salinRiwayatBaris(int $index): void
+    {
+        $d = $this->riwayatDetail[$index] ?? null;
+
+        if (! is_array($d) || ! empty($d['duplikat'])) {
+            return;
+        }
+
+        $this->salinKeClipboard($this->barisRiwayat($d));
+
+        Notification::make()
+            ->title('Baris riwayat disalin ke clipboard')
+            ->success()
+            ->send();
+    }
+
+    /**
+     * @param  array<string, mixed>  $d
+     */
+    private function barisRiwayat(array $d): string
+    {
+        $nomor = trim((string) ($d['nomor'] ?? ''));
+        $pecah = explode('/', $nomor);
+
+        $seq = trim($pecah[0] ?? '') ?: $nomor;
+        $kode = trim($pecah[1] ?? '') ?: $this->kode;
+
+        $nama = trim((string) ($d['nama'] ?? ''));
+        $nama = $nama !== '' ? PegawaiProfil::namaKapital($nama) : '';
+
+        $keterangan = trim(
+            trim((string) ($d['jenis'] ?? '')).' '.$nama.' '.((int) ($d['hari'] ?? 0)).' hari',
+        );
+
+        $rentang = trim((string) ($d['rentang'] ?? ''));
+
+        if ($rentang !== '') {
+            $keterangan .= ' ('.$rentang.')';
+        }
+
+        // Tanggal = waktu pembuatan riwayat (created_at / saat POST API),
+        // bukan tanggal pengajuan cuti.
+        $tanggal = trim((string) ($d['tanggal'] ?? ''));
+        $tanggal = $tanggal !== '' ? $tanggal : $this->tanggalPanjangRiwayat($d['pengajuan'] ?? '');
+
+        $sel = [$seq, $kode, $tanggal, $keterangan];
+
+        return implode("\t", array_map(
+            fn (string $v): string => str_replace(["\t", "\r", "\n"], ' ', $v),
+            $sel,
+        ));
+    }
+
+    /** Tanggal pengajuan "30-10-2026 15:49:19" → "30 Oktober 2026". */
+    private function tanggalPanjangRiwayat(mixed $pengajuan): string
+    {
+        $pengajuan = trim((string) $pengajuan);
+
+        if ($pengajuan === '') {
+            return '—';
+        }
+
+        if (preg_match('/^(\d{1,2})-(\d{1,2})-(\d{4})/', $pengajuan, $m)) {
+            return Carbon::createFromDate((int) $m[3], (int) $m[2], (int) $m[1])
+                ->locale('id')
+                ->translatedFormat('d F Y');
+        }
+
+        try {
+            return Carbon::parse($pengajuan)->locale('id')->translatedFormat('d F Y');
+        } catch (\Throwable) {
+            return $pengajuan;
+        }
+    }
+
+    /** Salin teks ke clipboard (fallback execCommand untuk browser lama). */
+    private function salinKeClipboard(string $teks): void
+    {
         $this->js(
             '(async function (teks) { try { await navigator.clipboard.writeText(teks); } catch (e) {'
             .' var ta = document.createElement("textarea"); ta.value = teks;'
@@ -579,11 +696,6 @@ class GeneratorSuratCuti extends Page
             .' try { document.execCommand("copy"); } catch (err) {} ta.remove(); } })'
             .'('.Js::from($teks).');',
         );
-
-        Notification::make()
-            ->title('Disalin: nomor + sisa '.$tahunBerjalan)
-            ->success()
-            ->send();
     }
 
     private function hasilTsv(): string

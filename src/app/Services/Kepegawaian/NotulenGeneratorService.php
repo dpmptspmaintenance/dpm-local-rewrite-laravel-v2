@@ -223,7 +223,196 @@ class NotulenGeneratorService
         $tmp = tempnam($this->tempDir(), 'notulen_').'.docx';
         $tp->saveAs($tmp);
 
+        $this->injectGambarLampiran($tmp, (array) ($notulen->gambar ?? []));
+
         return $tmp;
+    }
+
+    /**
+     * Sisipkan lampiran gambar sebagai tabel 2 kolom (satu gambar per sel)
+     * tepat di atas blok tanda tangan. Marker `${gambar_block}` pada template
+     * diganti tabel OpenXML; bila tidak ada gambar, paragraf marker dibuang.
+     *
+     * @param  list<string>  $paths  Path relatif di disk `arsip`.
+     */
+    private function injectGambarLampiran(string $docxPath, array $paths): void
+    {
+        $zip = new \ZipArchive;
+
+        if ($zip->open($docxPath) !== true) {
+            return;
+        }
+
+        $xml = $zip->getFromName('word/document.xml');
+        $rels = $zip->getFromName('word/_rels/document.xml.rels');
+        $types = $zip->getFromName('[Content_Types].xml');
+
+        if ($xml === false || $rels === false || $types === false) {
+            $zip->close();
+
+            return;
+        }
+
+        $maxRid = 0;
+        if (preg_match_all('/Id="rId(\d+)"/', $rels, $matches)) {
+            $maxRid = max(array_map('intval', $matches[1]));
+        }
+
+        $images = [];
+        $docPrId = 900;
+
+        foreach (array_values(array_filter(array_map('strval', $paths))) as $relative) {
+            $abs = $this->arsipAbsolutePath($relative);
+
+            if ($abs === null) {
+                continue;
+            }
+
+            $info = @getimagesize($abs);
+
+            if ($info === false) {
+                continue;
+            }
+
+            $ext = match ($info[2]) {
+                IMAGETYPE_PNG => 'png',
+                IMAGETYPE_JPEG => 'jpeg',
+                IMAGETYPE_GIF => 'gif',
+                IMAGETYPE_WEBP => 'webp',
+                default => null,
+            };
+
+            if ($ext === null) {
+                continue;
+            }
+
+            $name = 'notulen_'.substr(sha1($relative.'|'.count($images)), 0, 12).'.'.$ext;
+            $zip->addFromString('word/media/'.$name, (string) file_get_contents($abs));
+
+            $rid = 'rId'.(++$maxRid);
+            $rels = str_replace(
+                '</Relationships>',
+                '<Relationship Id="'.$rid.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/'.$name.'"/></Relationships>',
+                $rels
+            );
+
+            $mime = match ($ext) {
+                'png' => 'image/png',
+                'jpeg' => 'image/jpeg',
+                'gif' => 'image/gif',
+                default => 'image/webp',
+            };
+
+            if (! preg_match('/Extension="'.preg_quote($ext, '/').'"/', $types)) {
+                $types = str_replace('</Types>', '<Default Extension="'.$ext.'" ContentType="'.$mime.'"/></Types>', $types);
+            }
+
+            [$cx, $cy] = $this->gambarExtent((int) $info[0], (int) $info[1]);
+
+            $images[] = ['rid' => $rid, 'cx' => $cx, 'cy' => $cy, 'id' => ++$docPrId];
+        }
+
+        $tabel = $images === [] ? '' : $this->gambarTabelXml($images);
+
+        $xml = preg_replace('~<w:p\b(?:(?!<w:p\b).)*?\$\{gambar_block\}.*?</w:p>~s', $tabel, $xml, 1);
+
+        $zip->addFromString('word/document.xml', (string) $xml);
+        $zip->addFromString('word/_rels/document.xml.rels', $rels);
+        $zip->addFromString('[Content_Types].xml', $types);
+        $zip->close();
+    }
+
+    private function arsipAbsolutePath(string $relative): ?string
+    {
+        if ($relative === '') {
+            return null;
+        }
+
+        if (str_starts_with($relative, '/')) {
+            return is_file($relative) ? $relative : null;
+        }
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('arsip');
+
+        return $disk->exists($relative) ? $disk->path($relative) : null;
+    }
+
+    /**
+     * Ukuran gambar dalam EMU, dibatasi agar muat satu sel tabel 2 kolom.
+     *
+     * @return array{0: int, 1: int}
+     */
+    private function gambarExtent(int $widthPx, int $heightPx): array
+    {
+        $emuPerPixel = 914400 / 96;
+        $maxCx = (int) (3.1 * 914400);
+        $maxCy = (int) (2.3 * 914400);
+
+        $cx = max(1, (int) round($widthPx * $emuPerPixel));
+        $cy = max(1, (int) round($heightPx * $emuPerPixel));
+
+        $scale = min(1, $maxCx / $cx, $maxCy / $cy);
+
+        return [(int) round($cx * $scale), (int) round($cy * $scale)];
+    }
+
+    /**
+     * @param  list<array{rid: string, cx: int, cy: int, id: int}>  $images
+     */
+    private function gambarTabelXml(array $images): string
+    {
+        $rows = '';
+
+        foreach (array_chunk($images, 2) as $chunk) {
+            $cells = '';
+
+            foreach ($chunk as $index => $image) {
+                $width = $index === 0 ? 4961 : 4962;
+                $cells .= '<w:tc><w:tcPr><w:tcW w:w="'.$width.'" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>'
+                    .'<w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>'
+                    .'<w:r>'.$this->gambarDrawingXml($image).'</w:r></w:p></w:tc>';
+            }
+
+            if (count($chunk) === 1) {
+                $cells .= '<w:tc><w:tcPr><w:tcW w:w="4962" w:type="dxa"/></w:tcPr><w:p/></w:tc>';
+            }
+
+            $rows .= '<w:tr><w:trPr><w:cantSplit/></w:trPr>'.$cells.'</w:tr>';
+        }
+
+        $tabel = '<w:tbl><w:tblPr><w:tblW w:w="9923" w:type="dxa"/><w:jc w:val="center"/></w:tblPr>'
+            .'<w:tblGrid><w:gridCol w:w="4961"/><w:gridCol w:w="4962"/></w:tblGrid>'
+            .$rows.'</w:tbl>';
+
+        $judul = '<w:p><w:pPr><w:spacing w:before="240" w:after="120" w:line="240" w:lineRule="auto"/></w:pPr>'
+            .'<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>'
+            .'<w:t xml:space="preserve">Dokumentasi</w:t></w:r></w:p>';
+
+        return $judul.$tabel;
+    }
+
+    /**
+     * @param  array{rid: string, cx: int, cy: int, id: int}  $image
+     */
+    private function gambarDrawingXml(array $image): string
+    {
+        $rid = htmlspecialchars($image['rid'], ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $cx = $image['cx'];
+        $cy = $image['cy'];
+        $id = $image['id'];
+
+        return '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            .'<wp:extent cx="'.$cx.'" cy="'.$cy.'"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            .'<wp:docPr id="'.$id.'" name="Gambar '.$id.'"/>'
+            .'<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+            .'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            .'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:nvPicPr><pic:cNvPr id="'.$id.'" name="Gambar '.$id.'"/><pic:cNvPicPr/></pic:nvPicPr>'
+            .'<pic:blipFill><a:blip r:embed="'.$rid.'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            .'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'.$cx.'" cy="'.$cy.'"/></a:xfrm>'
+            .'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+            .'</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>';
     }
 
     /**

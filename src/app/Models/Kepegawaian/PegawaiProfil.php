@@ -85,7 +85,16 @@ class PegawaiProfil extends Model
 
     public function getNamaKapitalAttribute(): string
     {
-        $nama = trim((string) $this->nama);
+        return static::namaKapital($this->nama);
+    }
+
+    /**
+     * Versi statis dari accessor nama_kapital — dipakai saat hanya ada
+     * string nama (mis. baris riwayat generator surat cuti).
+     */
+    public static function namaKapital(?string $nama): string
+    {
+        $nama = trim((string) $nama);
 
         if ($nama === '') {
             return '';
